@@ -23,11 +23,19 @@ import group.worldstandard.pudel.api.annotation.*;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.components.actionrow.ActionRow;
 import net.dv8tion.jda.api.components.buttons.Button;
+import net.dv8tion.jda.api.components.container.Container;
+import net.dv8tion.jda.api.components.container.ContainerChildComponent;
 import net.dv8tion.jda.api.components.label.Label;
+import net.dv8tion.jda.api.components.mediagallery.MediaGallery;
+import net.dv8tion.jda.api.components.mediagallery.MediaGalleryItem;
+import net.dv8tion.jda.api.components.section.Section;
 import net.dv8tion.jda.api.components.selections.EntitySelectMenu;
 import net.dv8tion.jda.api.components.selections.StringSelectMenu;
+import net.dv8tion.jda.api.components.separator.Separator;
+import net.dv8tion.jda.api.components.textdisplay.TextDisplay;
 import net.dv8tion.jda.api.components.textinput.TextInput;
 import net.dv8tion.jda.api.components.textinput.TextInputStyle;
+import net.dv8tion.jda.api.components.thumbnail.Thumbnail;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
@@ -39,6 +47,9 @@ import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.EntitySelectInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.modals.Modal;
+import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
+import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
+import net.dv8tion.jda.api.utils.messages.MessageEditData;
 
 import java.awt.Color;
 import java.net.URI;
@@ -53,20 +64,26 @@ import java.util.regex.Pattern;
 /**
  * Interactive Embed Builder Plugin for Pudel Discord Bot
  * <p>
+ * Built entirely with Discord's Components v2 system.
+ * Uses {@link Container}, {@link TextDisplay}, {@link Section},
+ * {@link Separator}, {@link MediaGallery}, and {@link Thumbnail}
+ * for a rich, modern builder interface with live preview.
+ * <p>
  * Features:
  * - Single slash command entry point
- * - Live visual preview
+ * - Live visual preview rendered as Components v2
  * - Button-based editing and posting
  * - Channel selection via UI
+ * - Final embed posted as classic MessageEmbed
  *
  * @author Zazalng
- * @version 2.2.0
+ * @version 3.0.0
  */
 @Plugin(
         name = "Pudel's Embed Builder",
-        version = "2.2.0",
+        version = "3.0.0",
         author = "Zazalng",
-        description = "Interactive embed builder with live preview"
+        description = "Interactive embed builder with Components v2 live preview"
 )
 public class PudelMessagePlugin {
 
@@ -75,6 +92,9 @@ public class PudelMessagePlugin {
     private static final String MODAL_PREFIX = "embed:modal:";
     private static final String MENU_PREFIX = "embed:menu:";
     private static final String CHANNEL_SELECT_ID = "embed:channel_select";
+    private static final String FIELD_INLINE_SELECT_ID = "embed:menu:fieldinline";
+
+    private static final Color DEFAULT_PREVIEW_COLOR = new Color(0x2B2D31);
 
     // ==================== STATE MANAGEMENT ====================
     private PluginContext context;
@@ -85,7 +105,7 @@ public class PudelMessagePlugin {
     @OnEnable
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
-        ctx.log("info", "PudelMessagePlugin initialized (v2.2.0)");
+        ctx.log("info", "PudelMessagePlugin initialized (v3.0.0 — Components v2)");
     }
 
     @OnShutdown
@@ -123,11 +143,9 @@ public class PudelMessagePlugin {
         EmbedSession session = new EmbedSession(userId);
         activeSessions.put(userId, session);
 
-        // Send builder interface
-        event.replyEmbeds(buildPreviewEmbed(session))
-                .setContent("🛠️ **Embed Builder**\nUse the buttons below to edit. The embed shown is your **live preview**.")
+        // Send builder interface using Components v2
+        event.reply(buildV2Message(session).build())
                 .setEphemeral(true)
-                .addComponents(getBuilderActionRows())
                 .queue(hook -> hook.retrieveOriginal().queue(msg -> session.previewMessage = msg));
     }
 
@@ -174,7 +192,6 @@ public class PudelMessagePlugin {
         }
     }
 
-    // This handles the Channel Selection for "Post"
     @SelectMenuHandler(CHANNEL_SELECT_ID)
     public void handleChannelSelect(EntitySelectInteractionEvent event) {
         long userId = event.getUser().getIdLong();
@@ -190,17 +207,15 @@ public class PudelMessagePlugin {
 
         GuildMessageChannel targetChannel = channels.getFirst().asGuildMessageChannel();
 
-        // Permission Check
         if (!targetChannel.canTalk()) {
             event.reply("❌ I cannot send messages to " + targetChannel.getAsMention()).setEphemeral(true).queue();
             return;
         }
 
-        // Build and Post
+        // Build and Post (final embed uses classic MessageEmbed)
         MessageEmbed finalEmbed = buildFinalEmbed(session);
         targetChannel.sendMessageEmbeds(finalEmbed).queue(
                 success -> {
-                    // Cleanup
                     if (session.previewMessage != null) session.previewMessage.delete().queue();
                     activeSessions.remove(userId);
                     event.reply("✅ Embed posted in " + targetChannel.getAsMention()).setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
@@ -266,9 +281,23 @@ public class PudelMessagePlugin {
                     }
                     String name = getModalValue(event, "fieldname");
                     String value = getModalValue(event, "fieldvalue");
-                    String inlineStr = getModalValue(event, "fieldinline").toLowerCase();
-                    boolean inline = inlineStr.startsWith("y") || inlineStr.equals("true");
-                    session.fields.add(new EmbedField(name, value, inline));
+                    session.pendingFieldName = name;
+                    session.pendingFieldValue = value;
+                    StringSelectMenu inlineMenu = StringSelectMenu.create(FIELD_INLINE_SELECT_ID)
+                            .setPlaceholder("Display this field inline?")
+                            .addOption("✅ Yes — Inline", "yes")
+                            .addOption("❌ No — Full Width", "no")
+                            .build();
+                    event.reply(
+                            new MessageCreateBuilder()
+                                    .useComponentsV2(true)
+                                    .setComponents(Container.of(
+                                            TextDisplay.of("Should this field be displayed **inline**?"),
+                                            ActionRow.of(inlineMenu)
+                                    ))
+                                    .build()
+                    ).setEphemeral(true).queue();
+                    return;
                 }
                 case "customcolor" -> {
                     Color c = parseColor(getModalValue(event, "colorhex"));
@@ -290,6 +319,25 @@ public class PudelMessagePlugin {
         long userId = event.getUser().getIdLong();
         EmbedSession session = activeSessions.get(userId);
         if (session == null) return;
+
+        String menuId = event.getComponentId();
+
+        // Handle field inline selection
+        if (menuId.equals(FIELD_INLINE_SELECT_ID)) {
+            if (session.pendingFieldName == null || session.pendingFieldValue == null) {
+                event.reply("❌ No pending field data. Please try adding a field again.").setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                return;
+            }
+            boolean inline = event.getValues().getFirst().equals("yes");
+            session.fields.add(new EmbedField(session.pendingFieldName, session.pendingFieldValue, inline));
+            session.pendingFieldName = null;
+            session.pendingFieldValue = null;
+            if (session.previewMessage != null) {
+                session.previewMessage.editMessage(editV2Message(session).build()).queue();
+            }
+            event.reply("✅ Field added!").setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+            return;
+        }
 
         String selected = event.getValues().getFirst();
         if (selected.equals("custom")) {
@@ -315,59 +363,45 @@ public class PudelMessagePlugin {
         }
 
         event.deferEdit().queue();
-        updateSessionPreview(event, session);
-    }
-
-    // ==================== HELPER METHODS ====================
-
-    private void showChannelSelect(ButtonInteractionEvent event) {
-        EntitySelectMenu channelMenu = EntitySelectMenu.create(CHANNEL_SELECT_ID, EntitySelectMenu.SelectTarget.CHANNEL)
-                .setPlaceholder("Select a channel to post this embed")
-                .setChannelTypes(ChannelType.TEXT, ChannelType.NEWS)
-                .setMaxValues(1)
-                .build();
-
-        event.reply("Select the channel to post this embed:")
-                .setEphemeral(true)
-                .addComponents(ActionRow.of(channelMenu))
-                .queue();
-    }
-
-    private String validateUrl(ModalInteractionEvent event, String fieldId) {
-        String url = getModalValue(event, fieldId);
-        if (url.isEmpty()) return null;
-        if (isValidUrl(url)) return url;
-        // Note: In a real scenario, we might want to return null and warn user,
-        // but for simplicity in modal flow we return null (clearing it)
-        return null;
-    }
-
-    private void updateSessionPreview(ButtonInteractionEvent event, EmbedSession session) {
-        event.editMessageEmbeds(buildPreviewEmbed(session))
-                .setComponents(getBuilderActionRows())
-                .queue();
-    }
-
-    // Overload for StringSelectInteraction
-    private void updateSessionPreview(StringSelectInteractionEvent event, EmbedSession session) {
-        if(session.previewMessage != null) {
-            session.previewMessage.editMessageEmbeds(buildPreviewEmbed(session))
-                    .setComponents(getBuilderActionRows())
-                    .queue();
-        }
-    }
-
-    private void updateSessionPreviewFromModal(ModalInteractionEvent event, EmbedSession session) {
         if (session.previewMessage != null) {
-            session.previewMessage.editMessageEmbeds(buildPreviewEmbed(session))
-                    .setComponents(getBuilderActionRows())
-                    .queue();
+            session.previewMessage.editMessage(editV2Message(session).build()).queue();
         }
-        event.reply("✅ Updated!").setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
     }
 
-    private List<ActionRow> getBuilderActionRows() {
-        return List.of(
+    // ==================== V2 MESSAGE BUILDERS ====================
+
+    /**
+     * Builds the full Components v2 create message with builder controls + live preview.
+     */
+    private MessageCreateBuilder buildV2Message(EmbedSession session) {
+        return new MessageCreateBuilder()
+                .useComponentsV2(true)
+                .setComponents(getBuilderContainer(), buildPreviewContainer(session));
+    }
+
+    /**
+     * Builds the Components v2 edit message with builder controls + live preview.
+     */
+    private MessageEditBuilder editV2Message(EmbedSession session) {
+        return new MessageEditBuilder()
+                .useComponentsV2(true)
+                .setComponents(getBuilderContainer(), buildPreviewContainer(session));
+    }
+
+    /**
+     * Builds the Components v2 edit message (as MessageEditData) for direct use with editMessage().
+     */
+    private MessageEditData editV2Data(EmbedSession session) {
+        return editV2Message(session).build();
+    }
+
+    /**
+     * Builder controls container — header text, separator, and button action rows.
+     */
+    private Container getBuilderContainer() {
+        return Container.of(
+                TextDisplay.of("# 🛠️ Embed Builder\nUse the buttons below to edit. The preview below updates automatically."),
+                Separator.create(true, Separator.Spacing.SMALL),
                 ActionRow.of(
                         Button.primary(BUTTON_PREFIX + "title", "📝 Title"),
                         Button.primary(BUTTON_PREFIX + "description", "📄 Desc"),
@@ -392,7 +426,138 @@ public class PudelMessagePlugin {
         );
     }
 
-    // ... Modal Builders (mostly same as before, simplified for brevity) ...
+    /**
+     * Live preview container — renders embed content using Components v2.
+     * <p>
+     * The container's accent color matches the embed color, visually mimicking
+     * the colored left-border of a classic embed. Content is rendered using:
+     * <ul>
+     *   <li>{@link TextDisplay} for author, title, description, fields, footer</li>
+     *   <li>{@link Section} + {@link Thumbnail} for author icon and thumbnail image</li>
+     *   <li>{@link MediaGallery} for the main image</li>
+     *   <li>{@link Separator} for visual dividers between sections</li>
+     * </ul>
+     * <p>
+     * Note: This is a visual approximation. The final posted embed uses classic
+     * {@link MessageEmbed} which Discord renders natively.
+     */
+    private Container buildPreviewContainer(EmbedSession session) {
+        boolean hasContent = session.title != null || session.description != null || session.author != null
+                || session.footer != null || session.image != null || session.thumbnail != null
+                || session.timestamp != null || !session.fields.isEmpty();
+
+        Color accentColor = session.color != null ? session.color : DEFAULT_PREVIEW_COLOR;
+
+        if (!hasContent) {
+            return Container.of(
+                    TextDisplay.of("### 🆕 New Embed"),
+                    TextDisplay.of("_Start adding content using the buttons above._\n_This preview will update automatically._")
+            ).withAccentColor(Color.LIGHT_GRAY);
+        }
+
+        List<ContainerChildComponent> children = new ArrayList<>();
+        boolean thumbnailUsed = false;
+
+        // Author line
+        if (session.author != null) {
+            String authorText = session.authorUrl != null
+                    ? "-# [" + session.author + "](" + session.authorUrl + ")"
+                    : "-# " + session.author;
+            if (session.authorIcon != null) {
+                children.add(Section.of(
+                        Thumbnail.fromUrl(session.authorIcon),
+                        TextDisplay.of(authorText)
+                ));
+            } else {
+                children.add(TextDisplay.of(authorText));
+            }
+        }
+
+        // Title (optionally paired with Thumbnail)
+        if (session.title != null) {
+            String titleText = session.url != null
+                    ? "### [" + session.title + "](" + session.url + ")"
+                    : "### " + session.title;
+
+            if (session.thumbnail != null) {
+                children.add(Section.of(
+                        Thumbnail.fromUrl(session.thumbnail),
+                        TextDisplay.of(titleText)
+                ));
+                thumbnailUsed = true;
+            } else {
+                children.add(TextDisplay.of(titleText));
+            }
+        } else if (session.thumbnail != null) {
+            // No title but thumbnail exists — show with zero-width space
+            children.add(Section.of(
+                    Thumbnail.fromUrl(session.thumbnail),
+                    TextDisplay.of("\u200B")
+            ));
+            thumbnailUsed = true;
+        }
+
+        // Description
+        if (session.description != null) {
+            children.add(TextDisplay.of(session.description));
+        }
+
+        // Fields
+        if (!session.fields.isEmpty()) {
+            children.add(Separator.create(false, Separator.Spacing.SMALL));
+
+            StringBuilder inlineGroup = new StringBuilder();
+            for (EmbedField f : session.fields) {
+                if (f.inline) {
+                    if (!inlineGroup.isEmpty()) inlineGroup.append("\u2003\u2003\u2003");
+                    inlineGroup.append("**").append(f.name).append("**\n").append(f.value);
+                } else {
+                    if (!inlineGroup.isEmpty()) {
+                        children.add(TextDisplay.of(inlineGroup.toString()));
+                        inlineGroup.setLength(0);
+                    }
+                    children.add(TextDisplay.of("**" + f.name + "**\n" + f.value));
+                }
+            }
+            if (!inlineGroup.isEmpty()) {
+                children.add(TextDisplay.of(inlineGroup.toString()));
+            }
+        }
+
+        // Image
+        if (session.image != null) {
+            children.add(MediaGallery.of(MediaGalleryItem.fromUrl(session.image)));
+        }
+
+        // Footer + Timestamp
+        if (session.footer != null || session.timestamp != null) {
+            children.add(Separator.create(false, Separator.Spacing.SMALL));
+            StringBuilder footerText = new StringBuilder("-# ");
+            if (session.footer != null) footerText.append(session.footer);
+            if (session.footer != null && session.timestamp != null) footerText.append(" • ");
+            if (session.timestamp != null) {
+                footerText.append(session.timestamp.format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm")));
+            }
+            children.add(TextDisplay.of(footerText.toString()));
+        }
+
+        return Container.of(children).withAccentColor(accentColor);
+    }
+
+    // ==================== PREVIEW UPDATE HELPERS ====================
+
+    private void updateSessionPreview(ButtonInteractionEvent event, EmbedSession session) {
+        event.editMessage(editV2Message(session).build()).queue();
+    }
+
+    private void updateSessionPreviewFromModal(ModalInteractionEvent event, EmbedSession session) {
+        if (session.previewMessage != null) {
+            session.previewMessage.editMessage(editV2Message(session).build()).queue();
+        }
+        event.reply("✅ Updated!").setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+    }
+
+    // ==================== MODAL BUILDERS ====================
 
     private void showTitleModal(ButtonInteractionEvent e) {
         e.replyModal(Modal.create(MODAL_PREFIX + "title", "Title")
@@ -521,11 +686,6 @@ public class PudelMessagePlugin {
                                 .setPlaceholder("Value")
                                 .setMaxLength(1024)
                                 .build()
-                        ),
-                        Label.of("Field Inline?", TextInput.create("fieldinline", TextInputStyle.SHORT)
-                                .setPlaceholder("yes / no")
-                                .setRequired(true)
-                                .build()
                         )
                 ).build()
         ).queue();
@@ -538,27 +698,41 @@ public class PudelMessagePlugin {
                 .addOption("⚪ White", "white").addOption("⚫ Black", "black").addOption("🎨 Custom", "custom")
                 .addOption("❌ Reset", "none")
                 .build();
-        event.reply("Select Color")
-                .setEphemeral(true)
-                .addComponents(ActionRow.of(menu))
-                .queue();
+        event.reply(
+                new MessageCreateBuilder()
+                        .useComponentsV2(true)
+                        .setComponents(Container.of(
+                                TextDisplay.of("### 🎨 Select Color"),
+                                ActionRow.of(menu)
+                        ))
+                        .build()
+        ).setEphemeral(true).queue();
     }
 
-    private MessageEmbed buildPreviewEmbed(EmbedSession session) {
-        boolean hasContent = session.title != null || session.description != null || session.author != null
-                || session.footer != null || session.image != null || session.thumbnail != null
-                || session.timestamp != null || !session.fields.isEmpty();
+    private void showChannelSelect(ButtonInteractionEvent event) {
+        EntitySelectMenu channelMenu = EntitySelectMenu.create(CHANNEL_SELECT_ID, EntitySelectMenu.SelectTarget.CHANNEL)
+                .setPlaceholder("Select a channel to post this embed")
+                .setChannelTypes(ChannelType.TEXT, ChannelType.NEWS)
+                .setMaxValues(1)
+                .build();
 
-        if (!hasContent) {
-            EmbedBuilder b = new EmbedBuilder();
-            b.setTitle("🆕 New Embed");
-            b.setDescription("_Start adding content using the buttons below._\n_This preview will update automatically._");
-            b.setColor(Color.LIGHT_GRAY);
-            return b.build();
-        }
-        return buildFinalEmbed(session);
+        event.reply(
+                new MessageCreateBuilder()
+                        .useComponentsV2(true)
+                        .setComponents(Container.of(
+                                TextDisplay.of("### 📨 Select Channel\nChoose where to post this embed:"),
+                                ActionRow.of(channelMenu)
+                        ))
+                        .build()
+        ).setEphemeral(true).queue();
     }
 
+    // ==================== FINAL EMBED BUILDER ====================
+
+    /**
+     * Builds the final classic {@link MessageEmbed} for posting to the target channel.
+     * The target channel receives a real Discord embed, not Components v2.
+     */
     private MessageEmbed buildFinalEmbed(EmbedSession session) {
         EmbedBuilder b = new EmbedBuilder();
         if (session.title != null) b.setTitle(session.title, session.url);
@@ -575,6 +749,8 @@ public class PudelMessagePlugin {
         return b.build();
     }
 
+    // ==================== UTILITY METHODS ====================
+
     private boolean isValidUrl(String url) {
         try { new URI(url); return url.startsWith("http"); } catch (Exception e) { return false; }
     }
@@ -587,8 +763,14 @@ public class PudelMessagePlugin {
         try { return Color.decode("#" + hex.replace("#", "")); } catch (Exception e) { return null; }
     }
 
+    private String validateUrl(ModalInteractionEvent event, String fieldId) {
+        String url = getModalValue(event, fieldId);
+        if (url.isEmpty()) return null;
+        if (isValidUrl(url)) return url;
+        return null;
+    }
+
     private OffsetDateTime parseTimestamp(String ts) {
-        // Reuse the regex logic from previous version for parsing DD-MM-YYYY HH:mm:ss+Offset
         try {
             String regex = "^(?:(\\d+)[-!@#$%^&*/.]+(\\d+)[-!@#$%^&*/.]+(\\d+)\\s+)?(\\d{2}):(\\d{2}):(\\d{2})([+-]\\d+)$";
             Matcher m = Pattern.compile(regex).matcher(ts.trim());
@@ -603,6 +785,8 @@ public class PudelMessagePlugin {
         } catch(Exception e) { return null; }
     }
 
+    // ==================== DATA CLASSES ====================
+
     private static class EmbedSession {
         final long userId;
         Message previewMessage;
@@ -610,6 +794,8 @@ public class PudelMessagePlugin {
         Color color;
         OffsetDateTime timestamp;
         List<EmbedField> fields = new ArrayList<>();
+        String pendingFieldName;
+        String pendingFieldValue;
         EmbedSession(long u) { this.userId = u; }
     }
 
