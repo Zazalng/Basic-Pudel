@@ -45,6 +45,7 @@ import net.dv8tion.jda.api.components.container.Container;
 import net.dv8tion.jda.api.components.container.ContainerChildComponent;
 import net.dv8tion.jda.api.components.label.Label;
 import net.dv8tion.jda.api.components.section.Section;
+import net.dv8tion.jda.api.components.selections.SelectOption;
 import net.dv8tion.jda.api.components.selections.StringSelectMenu;
 import net.dv8tion.jda.api.components.separator.Separator;
 import net.dv8tion.jda.api.components.textdisplay.TextDisplay;
@@ -55,6 +56,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
+import net.dv8tion.jda.api.interactions.InteractionHook;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
@@ -68,7 +70,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -174,24 +176,28 @@ public class PudelMusicPlugin {
                 .setAllowSearch(true)
                 .setAllowDirectPlaylistIds(true)
                 .setAllowDirectVideoIds(true)
-                .setRemoteCipher("https://cipher.kikkia.dev/", "", "Pudel v2.0.0-rc5");
+                .setRemoteCipher("https://cipher.kikkia.dev/", "", "Pudel v2.1.1");
 
         YoutubeAudioSourceManager ytSourceManager = new YoutubeAudioSourceManager(
                 ytk,
+                new MusicWithThumbnail(),
                 new WebWithThumbnail(),
                 new MWebWithThumbnail(),
+                new WebEmbeddedWithThumbnail(),
                 new AndroidMusicWithThumbnail(),
                 new AndroidVrWithThumbnail(),
-                new Tv()
+                new IosWithThumbnail(),
+                new Tv(),
+                new TvHtml5SimplyWithThumbnail()
         );
-
-        ytSourceManager.useOauth2("", true);
-        this.playerManager.registerSourceManager(ytSourceManager);
 
         AudioSourceManagers.registerRemoteSources(
                 this.playerManager,
                 com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class
         );
+
+        ytSourceManager.useOauth2("", true);
+        this.playerManager.registerSourceManager(ytSourceManager);
     }
 
     // ==================== SLASH COMMAND ====================
@@ -211,8 +217,15 @@ public class PudelMusicPlugin {
 
         // Clean old session
         MusicSession old = activeSessions.get(userId);
-        if (old != null && old.message != null) {
-            old.message.delete().queue(null, e -> {});
+        if (old != null) {
+            old.cleanupTemp();
+            if (old.message != null) {
+                try{
+                    old.message.delete().queue();
+                } catch (IllegalStateException _){
+                    context.log("warn", "This message_id '".concat(old.message.getId()).concat("' may long gone. Skip delete."));
+                }
+            }
         }
 
         MusicSession session = new MusicSession(userId, guild.getIdLong());
@@ -264,6 +277,46 @@ public class PudelMusicPlugin {
 
         GuildMusicManager mgr = getGuildAudioPlayer(guild);
         String id = event.getComponentId().substring(BTN.length());
+
+        // Check if this button interaction is from a temp popup message
+        boolean isFromTemp = session.tempMessage != null
+                && event.getMessage().getIdLong() == session.tempMessage.getIdLong();
+
+        // If the interaction comes from a temp message, handle cleanup
+        if (isFromTemp) {
+            switch (id) {
+                case "back" -> {
+                    // "Cancel" from search results temp - just delete the temp
+                    event.deferEdit().queue(hook -> hook.deleteOriginal().queue(null, _ -> {}));
+                    session.tempMessage = null;
+                    session.tempHook = null;
+                    session.view = View.MAIN;
+                    return;
+                }
+                case "queueview" -> {
+                    // "Back to Queue" from remove menu temp - delete temp, refresh main to queue
+                    event.deferEdit().queue(hook -> hook.deleteOriginal().queue(null, _ -> {}));
+                    session.tempMessage = null;
+                    session.tempHook = null;
+                    session.view = View.QUEUE;
+                    session.page = 0;
+                    if (session.message != null) {
+                        session.message.editMessage(
+                                new MessageEditBuilder()
+                                        .useComponentsV2(true)
+                                        .setComponents(buildQueueView(session))
+                                        .build()
+                        ).queue();
+                    }
+                    return;
+                }
+                default -> {
+                    // Any other button from temp: just acknowledge
+                    event.deferEdit().queue();
+                    return;
+                }
+            }
+        }
 
         switch (id) {
             // ---- Playback Controls ----
@@ -401,34 +454,70 @@ public class PudelMusicPlugin {
                 guild.getAudioManager().openAudioConnection(member.getVoiceState().getChannel());
             }
 
-            // Acknowledge the modal
-            event.reply("🔍 Loading...").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(3, TimeUnit.SECONDS));
+            // Acknowledge the modal with a loading message (kept as temp for search results)
+            session.cleanupTemp(); // Clean any previous temp message
+            final String finalSearchPrefix = searchPrefix;
+            event.reply(
+                    new MessageCreateBuilder()
+                            .useComponentsV2(true)
+                            .setComponents(Container.of(
+                                    TextDisplay.of("# 🔍 Searching..."),
+                                    Separator.create(false, Separator.Spacing.SMALL),
+                                    TextDisplay.of("_Loading results, please wait..._")
+                            ).withAccentColor(ACCENT_PLAYING))
+                            .build()
+            ).setEphemeral(true).queue(hook -> {
+                session.tempHook = hook;
+                hook.retrieveOriginal().queue(msg -> session.tempMessage = msg);
 
-            playerManager.loadItemOrdered(mgr, searchPrefix + query, new AudioLoadResultHandler() {
-                @Override
-                public void trackLoaded(AudioTrack track) {
-                    mgr.scheduler.queue(track, userId);
-                    updateSessionMessage(session, mgr);
-                }
-
-                @Override
-                public void playlistLoaded(AudioPlaylist playlist) {
-                    if (playlist.isSearchResult()) {
-                        handleSearchResults(session, playlist);
-                    } else {
-                        for (AudioTrack track : playlist.getTracks()) {
-                            mgr.scheduler.queue(track, userId);
-                        }
+                // Start loading AFTER the hook is set, so callbacks can use tempHook
+                playerManager.loadItemOrdered(mgr, finalSearchPrefix + query, new AudioLoadResultHandler() {
+                    @Override
+                    public void trackLoaded(AudioTrack track) {
+                        mgr.scheduler.queue(track, userId);
+                        // Direct load: clean up temp message and refresh main Music Box
+                        session.cleanupTemp();
                         updateSessionMessage(session, mgr);
                     }
-                }
 
-                @Override
-                public void noMatches() { /* Music Box stays as-is */ }
+                    @Override
+                    public void playlistLoaded(AudioPlaylist playlist) {
+                        if (playlist.isSearchResult()) {
+                            handleSearchResults(session, playlist);
+                        } else {
+                            for (AudioTrack track : playlist.getTracks()) {
+                                mgr.scheduler.queue(track, userId);
+                            }
+                            // Playlist load: clean up temp message and refresh main Music Box
+                            session.cleanupTemp();
+                            updateSessionMessage(session, mgr);
+                        }
+                    }
 
-                @Override
-                public void loadFailed(FriendlyException exception) { /* Music Box stays as-is */ }
+                    @Override
+                    public void noMatches() {
+                        // Edit temp to show no results, auto-delete
+                        if (session.tempHook != null) {
+                            session.tempHook.editOriginal("❌ No matches found!").queue(
+                                    _ -> session.tempHook.deleteOriginal().queueAfter(5, TimeUnit.SECONDS)
+                            );
+                        }
+                        session.tempMessage = null;
+                        session.tempHook = null;
+                    }
+
+                    @Override
+                    public void loadFailed(FriendlyException exception) {
+                        // Edit temp to show error, auto-delete
+                        if (session.tempHook != null) {
+                            session.tempHook.editOriginal("❌ Failed to load: " + exception.getMessage()).queue(
+                                    _ -> session.tempHook.deleteOriginal().queueAfter(5, TimeUnit.SECONDS)
+                            );
+                        }
+                        session.tempMessage = null;
+                        session.tempHook = null;
+                    }
+                });
             });
         }
     }
@@ -464,14 +553,14 @@ public class PudelMusicPlugin {
             mgr.scheduler.queue(selected, userId);
             searchCache.remove(searchId);
 
-            // Return to main view
+            // Acknowledge and delete the temp search message
+            event.deferEdit().queue(hook -> hook.deleteOriginal().queue(null, _ -> {}));
+            session.tempMessage = null;
+            session.tempHook = null;
+
+            // Refresh the original Music Box
             session.view = View.MAIN;
-            event.editMessage(
-                    new MessageEditBuilder()
-                            .useComponentsV2(true)
-                            .setComponents(buildMainView(mgr, session))
-                            .build()
-            ).queue();
+            updateSessionMessage(session, mgr);
             return;
         }
 
@@ -485,14 +574,21 @@ public class PudelMusicPlugin {
                 queueRepo.deleteById(dbId);
             }
 
-            // Return to queue view
+            // Acknowledge and delete the temp remove message
+            event.deferEdit().queue(hook -> hook.deleteOriginal().queue(null, _ -> {}));
+            session.tempMessage = null;
+            session.tempHook = null;
+
+            // Refresh the original Music Box to queue view
             session.view = View.QUEUE;
-            event.editMessage(
-                    new MessageEditBuilder()
-                            .useComponentsV2(true)
-                            .setComponents(buildQueueView(session))
-                            .build()
-            ).queue();
+            if (session.message != null) {
+                session.message.editMessage(
+                        new MessageEditBuilder()
+                                .useComponentsV2(true)
+                                .setComponents(buildQueueView(session))
+                                .build()
+                ).queue();
+            }
         }
     }
 
@@ -631,14 +727,13 @@ public class PudelMusicPlugin {
             int start = session.page * PAGE_SIZE;
             int end = Math.min(start + PAGE_SIZE, totalItems);
 
-            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm");
             StringBuilder sb = new StringBuilder();
             for (int i = start; i < end; i++) {
                 HistoryEntry h = history.get(i);
-                String time = sdf.format(new Date(h.getPlayedAt()));
+                String time = h.getPlayedAt().toString();
                 String title = h.getTrackTitle();
                 if (title.length() > 50) title = title.substring(0, 47) + "...";
-                sb.append(String.format("`[%s]` [%s](%s)\n", time, title, h.getTrackUrl()));
+                sb.append(String.format("<t:%s:S> [%s](%s)\n", time, title, h.getTrackUrl()));
             }
             children.add(TextDisplay.of(sb.toString()));
             children.add(TextDisplay.of("-# Page " + (session.page + 1) + "/" + totalPages
@@ -764,7 +859,7 @@ public class PudelMusicPlugin {
     private void showQueueSongModal(ButtonInteractionEvent event) {
         StringSelectMenu sourceMenu = StringSelectMenu.create("source")
                 .setPlaceholder("Search source")
-                .addOption("🔍 Auto-detect (URL or YouTube)", "auto")
+                .setDefaultOptions(SelectOption.of("🔍 Auto-detect (URL or YouTube)", "auto"))
                 .addOption("▶ YouTube", "youtube")
                 .addOption("☁ SoundCloud", "soundcloud")
                 .build();
@@ -795,12 +890,19 @@ public class PudelMusicPlugin {
             return;
         }
 
-        event.editMessage(
-                new MessageEditBuilder()
+        // Clean up any previous temp message
+        session.cleanupTemp();
+
+        // Send as a NEW ephemeral message (don't touch the original Music Box)
+        event.reply(
+                new MessageCreateBuilder()
                         .useComponentsV2(true)
                         .setComponents(buildRemoveView(session, queue))
                         .build()
-        ).queue();
+        ).setEphemeral(true).queue(hook -> {
+            session.tempHook = hook;
+            hook.retrieveOriginal().queue(msg -> session.tempMessage = msg);
+        });
     }
 
     // ==================== SEARCH RESULT HANDLING ====================
@@ -810,14 +912,15 @@ public class PudelMusicPlugin {
         String searchId = UUID.randomUUID().toString();
         searchCache.put(searchId, tracks);
 
-        if (session.message != null) {
+        // Edit the temp loading message into search results (NOT the original Music Box)
+        if (session.tempHook != null) {
             session.view = View.SEARCH;
-            session.message.editMessage(
+            session.tempHook.editOriginal(
                     new MessageEditBuilder()
                             .useComponentsV2(true)
                             .setComponents(buildSearchView(session, tracks, searchId))
                             .build()
-            ).queue();
+            ).queue(msg -> session.tempMessage = msg);
         }
     }
 
@@ -915,7 +1018,7 @@ public class PudelMusicPlugin {
     // ==================== AUDIO MANAGER ====================
 
     private GuildMusicManager getGuildAudioPlayer(Guild guild) {
-        return musicManagers.computeIfAbsent(guild.getIdLong(), k -> {
+        return musicManagers.computeIfAbsent(guild.getIdLong(), _ -> {
             GuildMusicManager mgr = new GuildMusicManager(playerManager, guild.getIdLong());
             guild.getAudioManager().setSendingHandler(new AudioPlayerSendHandler(mgr.player));
             return mgr;
@@ -957,13 +1060,24 @@ public class PudelMusicPlugin {
     private static class MusicSession {
         final long userId;
         final long guildId;
-        Message message;
+        Message message;       // The main Music Box message (persistent)
+        Message tempMessage;   // Temporary popup message for search results / remove menu
+        InteractionHook tempHook; // Hook for temp message lifecycle
         View view = View.MAIN;
         int page = 0;
 
         MusicSession(long userId, long guildId) {
             this.userId = userId;
             this.guildId = guildId;
+        }
+
+        /** Clean up the temporary popup message if it exists */
+        void cleanupTemp() {
+            if (tempMessage != null) {
+                tempMessage.delete().queue(null, _ -> {});
+                tempMessage = null;
+            }
+            tempHook = null;
         }
     }
 
@@ -1028,7 +1142,7 @@ public class PudelMusicPlugin {
                         hist.setUserId(e.getUserId());
                         hist.setTrackTitle(e.getTitle());
                         hist.setTrackUrl(infoTrack.getInfo().uri);
-                        hist.setPlayedAt(System.currentTimeMillis());
+                        hist.setPlayedAt(Instant.now().getEpochSecond());
                         historyRepo.save(hist);
                     } catch (IOException ex) {
                         context.log("error", "History save failed: " + ex.getMessage());

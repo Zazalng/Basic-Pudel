@@ -21,7 +21,6 @@ package group.worldstandard.pudel.plugin;
 import group.worldstandard.pudel.api.PluginContext;
 import group.worldstandard.pudel.api.annotation.*;
 import net.dv8tion.jda.api.EmbedBuilder;
-import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.components.actionrow.ActionRow;
 import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.components.container.Container;
@@ -109,7 +108,7 @@ public class PudelMessagePlugin {
     public boolean onShutdown() {
         for (EmbedSession session : activeSessions.values()) {
             if (session.previewMessage != null) {
-                session.previewMessage.delete().queue(null, e -> {});
+                session.previewMessage.delete().queue(null, _ -> {});
             }
         }
         activeSessions.clear();
@@ -133,7 +132,11 @@ public class PudelMessagePlugin {
         // Delete old session if exists
         EmbedSession oldSession = activeSessions.get(userId);
         if (oldSession != null && oldSession.previewMessage != null) {
-            oldSession.previewMessage.delete().queue(null, e -> {});
+            try{
+                oldSession.previewMessage.delete().queue(null, _ -> {});
+            } catch (IllegalStateException _) {
+                context.log("warn", "This message_id '".concat(oldSession.previewMessage.getId()).concat("' may long gone. Skip delete."));
+            }
         }
 
         // Create new session
@@ -282,7 +285,7 @@ public class PudelMessagePlugin {
 
                     MessageEmbed finalEmbed = buildFinalEmbed(session);
                     targetChannel.sendMessageEmbeds(finalEmbed).queue(
-                            success -> {
+                            _ -> {
                                 if (session.previewMessage != null) session.previewMessage.delete().queue();
                                 activeSessions.remove(userId);
                                 event.reply("✅ Embed posted in " + targetChannel.getAsMention()).setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
