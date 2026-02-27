@@ -172,6 +172,12 @@ public class PudelMusicPlugin {
     private void initializeLavaPlayer() {
         this.playerManager = new DefaultAudioPlayerManager();
 
+        /*String[] potoken = PotokenGenerator.generate();
+        context.log("info", "Po-Token result are ".concat(Arrays.toString(potoken)));
+        WebWithThumbnail.setPoTokenAndVisitorData(potoken[0], potoken[1]);
+        MWebWithThumbnail.setPoTokenAndVisitorData(potoken[0], potoken[1]);
+        WebEmbeddedWithThumbnail.setPoTokenAndVisitorData(potoken[0], potoken[1]);*/
+
         YoutubeSourceOptions ytk = new YoutubeSourceOptions()
                 .setAllowSearch(true)
                 .setAllowDirectPlaylistIds(true)
@@ -196,7 +202,15 @@ public class PudelMusicPlugin {
                 com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class
         );
 
-        ytSourceManager.useOauth2("", true);
+        /* For current version of LavaPlayer / YoutubeSource
+         * every client are require to sign in token, Which mean
+         * all client in this list is NOT capable to play any song unless TV client
+         *
+         * Without oauth2Api currently no song can be play
+         */
+        String oauth2Api = "";
+        ytSourceManager.useOauth2(oauth2Api, !oauth2Api.isEmpty());
+
         this.playerManager.registerSourceManager(ytSourceManager);
     }
 
@@ -223,7 +237,7 @@ public class PudelMusicPlugin {
                 try{
                     old.message.delete().queue();
                 } catch (IllegalStateException _){
-                    context.log("warn", "This message_id '".concat(old.message.getId()).concat("' may long gone. Skip delete."));
+                    context.log("warn", "message_id '".concat(old.message.getId()).concat("' may long gone. Skip delete."));
                 }
             }
         }
@@ -856,12 +870,12 @@ public class PudelMusicPlugin {
 
     // ==================== MODAL BUILDERS ====================
 
-    private void showQueueSongModal(ButtonInteractionEvent event) {
-        StringSelectMenu sourceMenu = StringSelectMenu.create("source")
+    private void showQueueSongModal(ButtonInteractionEvent event) {StringSelectMenu sourceMenu = StringSelectMenu.create("source")
                 .setPlaceholder("Search source")
-                .setDefaultOptions(SelectOption.of("🔍 Auto-detect (URL or YouTube)", "auto"))
+                .addOption("🔍 Auto-detect (URL or YouTube)", "auto")
                 .addOption("▶ YouTube", "youtube")
                 .addOption("☁ SoundCloud", "soundcloud")
+                .setDefaultOptions(SelectOption.of("🔍 Auto-detect (URL or YouTube)", "auto"))
                 .build();
 
         event.replyModal(Modal.create(MODAL_PREFIX + "queuesong", "Queue a Song")
