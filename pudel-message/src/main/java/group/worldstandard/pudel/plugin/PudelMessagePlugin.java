@@ -135,7 +135,7 @@ public class PudelMessagePlugin {
             try{
                 oldSession.previewMessage.delete().queue(null, _ -> {});
             } catch (IllegalStateException _) {
-                context.log("warn", "This message_id '".concat(oldSession.previewMessage.getId()).concat("' may long gone. Skip delete."));
+                context.log("warn", "message_id '".concat(oldSession.previewMessage.getId()).concat("' may long gone. Skip delete."));
             }
         }
 

@@ -16,6 +16,7 @@
         <module>pudel-music</module>
         <module>pudel-message</module>
         <module>pudel-rolecolor</module>
+        <module>pudel-playful</module>
     </modules>
 
     <licenses>
@@ -42,12 +43,11 @@
     </scm>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <jda.version>6.3.0</jda.version>
-        <pudel.version>2.1.0</pudel.version>
+        <jda.version>6.3.1</jda.version>
+        <pudel.version>2.1.1</pudel.version>
         <log.version>2.0.17</log.version>
     </properties>
 

@@ -11,12 +11,9 @@
 
     <artifactId>pudel-message</artifactId>
     <name>Pudel's Message</name>
-    <description>Embed Message builder for Pudel</description>
-    <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
