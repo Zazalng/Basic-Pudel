@@ -50,11 +50,7 @@ import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 
 import java.awt.Color;
-import java.io.InputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -91,8 +87,6 @@ public class PudelPlayfulTime {
     private static final Color ACCENT_VIEW = new Color(0x4ECDC4);
     private static final Color ACCENT_PRANK = new Color(0xFFE66D);
 
-    private static final String TRANSFER_SH_URL = "https://transfer.sh";
-
     // ==================== STATE ====================
     private PluginContext ctx;
     private PluginDatabaseManager db;
@@ -103,11 +97,6 @@ public class PudelPlayfulTime {
     private final Map<String, String> viewingContainer = new ConcurrentHashMap<>();
     /** Tracks control panel messages for editing. */
     private final Map<String, Message> controlMessages = new ConcurrentHashMap<>();
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_2)
-            .connectTimeout(java.time.Duration.ofSeconds(15))
-            .build();
 
     private final Random random = new Random();
 
@@ -379,6 +368,14 @@ public class PudelPlayfulTime {
                 viewingContainer.remove(userId);
                 event.editMessage(editMainPanel(userId).build()).queue();
             }
+            case "back-view" -> {
+                String containerId = viewingContainer.get(userId);
+                if (containerId != null) {
+                    event.editMessage(editViewPanel(userId, containerId).build()).queue();
+                } else {
+                    event.editMessage(editMainPanel(userId).build()).queue();
+                }
+            }
         }
     }
 
@@ -488,7 +485,6 @@ public class PudelPlayfulTime {
             return;
         }
 
-
         // Delete all pranks in this container
         List<PrankCollection> pranks = collectionRepo.query()
                 .where("container_id", containerId)
@@ -500,48 +496,54 @@ public class PudelPlayfulTime {
         // Delete the container
         containerRepo.deleteById(container.getId());
 
-        // If user was viewing this container, go back to main
+        // If user was viewing this container, clear it
         viewingContainer.remove(userId);
 
-        // Update panel
+        // Edit the same message back to the main panel
         event.editMessage(editMainPanel(userId).build()).queue();
     }
 
     // ==================== VIEW / SELECT CONTAINER ====================
 
-    private void showContainerSelectMenu(ButtonInteractionEvent event, String userId, String action) {
+    private MessageEditBuilder editContainerSelectPanel(String userId, String action) {
         List<PrankContainer> myContainers = containerRepo.query()
                 .where("user_id", userId)
                 .list();
 
+        List<ContainerChildComponent> children = new ArrayList<>();
+        children.add(TextDisplay.of("### 📦 Select Container to " + (action.equals("view") ? "View" : "Delete")));
+        children.add(Separator.create(true, Separator.Spacing.SMALL));
+
         if (myContainers.isEmpty()) {
-            event.reply("❌ You don't have any containers yet!")
-                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
+            children.add(TextDisplay.of("_You don't have any containers yet._"));
+        } else {
+            StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(MENU + action + "-container")
+                    .setPlaceholder("Select a container");
+
+            for (PrankContainer c : myContainers) {
+                long prankCount = collectionRepo.query()
+                        .where("container_id", c.getContainerId())
+                        .count();
+                menuBuilder.addOption(
+                        c.getName() + " (" + prankCount + " pranks)",
+                        c.getContainerId()
+                );
+            }
+            children.add(ActionRow.of(menuBuilder.build()));
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(MENU + action + "-container")
-                .setPlaceholder("Select a container");
+        children.add(Separator.create(true, Separator.Spacing.SMALL));
+        children.add(ActionRow.of(
+                Button.secondary(BTN + "back-main", "⬅️ Back")
+        ));
 
-        for (PrankContainer c : myContainers) {
-            long prankCount = collectionRepo.query()
-                    .where("container_id", c.getContainerId())
-                    .count();
-            menuBuilder.addOption(
-                    c.getName() + " (" + prankCount + " pranks)",
-                    c.getContainerId()
-            );
-        }
+        return new MessageEditBuilder()
+                .useComponentsV2(true)
+                .setComponents(Container.of(children).withAccentColor(ACCENT_MAIN));
+    }
 
-        event.reply(
-                new MessageCreateBuilder()
-                        .useComponentsV2(true)
-                        .setComponents(Container.of(
-                                TextDisplay.of("### 📦 Select Container to " + (action.equals("view") ? "View" : "Delete")),
-                                ActionRow.of(menuBuilder.build())
-                        ))
-                        .build()
-        ).setEphemeral(true).queue();
+    private void showContainerSelectMenu(ButtonInteractionEvent event, String userId, String action) {
+        event.editMessage(editContainerSelectPanel(userId, action).build()).queue();
     }
 
     // ==================== ADD PRANK ====================
@@ -554,8 +556,8 @@ public class PudelPlayfulTime {
             return;
         }
 
-        event.reply(
-                new MessageCreateBuilder()
+        event.editMessage(
+                new MessageEditBuilder()
                         .useComponentsV2(true)
                         .setComponents(Container.of(
                                 TextDisplay.of("### ➕ Add Prank"),
@@ -564,10 +566,14 @@ public class PudelPlayfulTime {
                                 ActionRow.of(
                                         Button.success(BTN + "add-prank-upload", "📤 Upload File"),
                                         Button.primary(BTN + "add-prank-url", "🔗 Paste URL")
+                                ),
+                                Separator.create(true, Separator.Spacing.SMALL),
+                                ActionRow.of(
+                                        Button.secondary(BTN + "back-view", "⬅️ Back")
                                 )
                         ).withAccentColor(ACCENT_VIEW))
                         .build()
-        ).setEphemeral(true).queue();
+        ).queue();
     }
 
     /**
@@ -636,8 +642,7 @@ public class PudelPlayfulTime {
 
     /**
      * Handles the upload modal — extracts the {@link Message.Attachment} from the
-     * {@link AttachmentUpload} component, downloads it, uploads to transfer.sh,
-     * then saves the prank with the resulting URL.
+     * {@link AttachmentUpload} component, then saves the prank with its URL.
      */
     private void handleAddPrankUploadModal(ModalInteractionEvent event, String userId) {
         String containerId = viewingContainer.get(userId);
@@ -682,15 +687,10 @@ public class PudelPlayfulTime {
 
         // Defer reply since upload takes time
         event.deferReply(true).queue(hook -> {
-            // Download from Discord proxy and upload to transfer.sh
-            attachment.getProxy().download().thenCompose(inputStream ->
-                    uploadToTransferSh(attachment.getFileName(), inputStream)
-            ).thenAccept(url -> {
-                // Save prank with the transfer.sh URL
                 PrankCollection prank = new PrankCollection(
                         UUID.randomUUID().toString(),
                         containerId,
-                        url,
+                        attachment.getUrl(),
                         placeholder
                 );
                 collectionRepo.save(prank);
@@ -701,12 +701,7 @@ public class PudelPlayfulTime {
                     ctrlMsg.editMessage(editViewPanel(userId, containerId).build()).queue();
                 }
 
-                hook.editOriginal("✅ Prank added! File uploaded successfully.").queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
-            }).exceptionally(err -> {
-                ctx.log("error", "Transfer.sh upload failed: " + err.getMessage());
-                hook.editOriginal("❌ Upload failed: " + err.getMessage()).queue(m -> m.delete().queueAfter(8, TimeUnit.SECONDS));
-                return null;
-            });
+                hook.editOriginal("✅ Prank added! File uploaded successfully.").queue(m -> m.delete().queueAfter(3, TimeUnit.SECONDS));
         });
     }
 
@@ -773,32 +768,37 @@ public class PudelPlayfulTime {
                 .where("container_id", containerId)
                 .list();
 
+        List<ContainerChildComponent> children = new ArrayList<>();
+        children.add(TextDisplay.of("### 🎴 Select Prank to " + (action.equals("edit") ? "Edit" : "Remove")));
+        children.add(Separator.create(true, Separator.Spacing.SMALL));
+
         if (pranks.isEmpty()) {
-            event.reply("❌ This container has no pranks!")
-                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
+            children.add(TextDisplay.of("_This container has no pranks yet._"));
+        } else {
+            StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(MENU + action + "-prank")
+                    .setPlaceholder("Select a prank to " + action);
+
+            for (PrankCollection p : pranks) {
+                String shortId = p.getPrankId().substring(0, 8);
+                String label = p.getPlaceholder().length() > 50
+                        ? p.getPlaceholder().substring(0, 50) + "..."
+                        : p.getPlaceholder();
+                menuBuilder.addOption(shortId + " — " + label, p.getPrankId());
+            }
+            children.add(ActionRow.of(menuBuilder.build()));
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(MENU + action + "-prank")
-                .setPlaceholder("Select a prank to " + action);
+        children.add(Separator.create(true, Separator.Spacing.SMALL));
+        children.add(ActionRow.of(
+                Button.secondary(BTN + "back-view", "⬅️ Back")
+        ));
 
-        for (PrankCollection p : pranks) {
-            String shortId = p.getPrankId().substring(0, 8);
-            String label = p.getPlaceholder().length() > 50
-                    ? p.getPlaceholder().substring(0, 50) + "..."
-                    : p.getPlaceholder();
-            menuBuilder.addOption(shortId + " — " + label, p.getPrankId());
-        }
-
-        event.reply(
-                new MessageCreateBuilder()
+        event.editMessage(
+                new MessageEditBuilder()
                         .useComponentsV2(true)
-                        .setComponents(Container.of(
-                                TextDisplay.of("### 🎴 Select Prank to " + (action.equals("edit") ? "Edit" : "Remove")),
-                                ActionRow.of(menuBuilder.build())
-                        ))
+                        .setComponents(Container.of(children).withAccentColor(ACCENT_VIEW))
                         .build()
-        ).setEphemeral(true).queue();
+        ).queue();
     }
 
     private void showEditPrankModal(StringSelectInteractionEvent event, String prankId) {
@@ -877,46 +877,13 @@ public class PudelPlayfulTime {
 
         collectionRepo.deleteById(prank.getId());
 
-        // Update view panel
+        // Edit the same message back to the container view panel
         String containerId = viewingContainer.get(userId);
         if (containerId != null) {
-            Message ctrlMsg = controlMessages.get(userId);
-            if (ctrlMsg != null) {
-                ctrlMsg.editMessage(editViewPanel(userId, containerId).build()).queue();
-            }
+            event.editMessage(editViewPanel(userId, containerId).build()).queue();
+        } else {
+            event.editMessage(editMainPanel(userId).build()).queue();
         }
-
-        event.reply("✅ Prank removed!")
-                .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-    }
-
-    // ==================== FILE UPLOAD TO TRANSFER.SH ====================
-
-    /**
-     * Uploads a Discord attachment to transfer.sh and returns the download URL.
-     * Used when users provide files via Discord's file attachment.
-     */
-    private CompletableFuture<String> uploadToTransferSh(String filename, InputStream data) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                byte[] bytes = data.readAllBytes();
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(TRANSFER_SH_URL + "/" + filename))
-                        .header("Content-Type", "application/octet-stream")
-                        .PUT(HttpRequest.BodyPublishers.ofByteArray(bytes))
-                        .build();
-
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-                if (response.statusCode() == 200) {
-                    return response.body().trim();
-                } else {
-                    throw new RuntimeException("Upload failed with status: " + response.statusCode());
-                }
-            } catch (Exception e) {
-                throw new CompletionException(e);
-            }
-        });
     }
 
     // ==================== UTILITY METHODS ====================
