@@ -129,7 +129,7 @@ public class PudelMusicPlugin {
         this.db = ctx.getDatabaseManager();
         initializeDatabase();
         initializeLavaPlayer();
-        ctx.log("info", "Music Plugin v3.0.0 loaded (Components v2)");
+        ctx.log("info", "Pudel's Music Plugin initialized (v3.0.1 - Components v2)");
     }
 
     @OnShutdown

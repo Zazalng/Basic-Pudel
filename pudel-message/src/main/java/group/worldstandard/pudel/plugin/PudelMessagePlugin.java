@@ -101,7 +101,7 @@ public class PudelMessagePlugin {
     @OnEnable
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
-        ctx.log("info", "PudelMessagePlugin initialized (v3.0.0 — Components v2)");
+        ctx.log("info", "Pudel's Embed Builder initialized (v3.0.1 — Components v2)");
     }
 
     @OnShutdown
