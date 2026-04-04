@@ -6,11 +6,11 @@
     <parent>
         <groupId>group.worldstandard</groupId>
         <artifactId>default-pudel</artifactId>
-        <version>2.2.1</version>
+        <version>2.2.2</version>
     </parent>
 
     <artifactId>pudel-message</artifactId>
-    <name>Pudel's Message</name>
+    <name>Pudel's Embed Builder</name>
 
     <licenses>
         <license>
