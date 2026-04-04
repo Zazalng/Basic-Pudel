@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
         name = "Pudel's Category Management",
         author = "Zazalng",
         version = "1.0.0-rc1",
-        description = "Managing Category by Auto given administrator permission to individual who should manage this category."
+        description = "Manages Discord categories and lets administrators assign category managers."
 )
 public class PudelCategorizing {
 
@@ -963,9 +963,11 @@ public class PudelCategorizing {
                         .queue(null, err -> context.log("warn", "Failed to set role override: " + err.getMessage()));
 
                 // Spec: Deny VIEW_CHANNEL for @everyone to make category private
-                category.upsertPermissionOverride(guild.getPublicRole())
-                        .deny(Permission.VIEW_CHANNEL)
-                        .queue(null, err -> context.log("warn", "Failed to set @everyone override: " + err.getMessage()));
+                if(!roleId.equals(guild.getPublicRole().getId())){
+                    category.upsertPermissionOverride(guild.getPublicRole())
+                            .deny(Permission.VIEW_CHANNEL)
+                            .queue(null, err -> context.log("warn", "Failed to set @everyone override: " + err.getMessage()));
+                }
             }
         }
     }

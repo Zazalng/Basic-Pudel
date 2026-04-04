@@ -9,7 +9,7 @@
     <version>2.2.2</version>
     <packaging>pom</packaging>
     <name>Basic Pudel</name>
-    <description>Basic Command for Pudel base on legacy Eli</description>
+    <description>Basic Command for Pudel based on legacy Eli</description>
     <url>https://github.com/World-Standard-Group/Basic-Pudel</url>
 
     <modules>
