@@ -9,8 +9,8 @@
         <version>2.2.2</version>
     </parent>
 
-    <artifactId>pudel-message</artifactId>
-    <name>Pudel's Embed Builder</name>
+    <name>Pudel's Categorize Management</name>
+    <artifactId>pudel-categorizement</artifactId>
 
     <licenses>
         <license>

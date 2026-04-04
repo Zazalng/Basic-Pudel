@@ -1,6 +1,6 @@
 # Basic Pudel - 🎭 Pudel's Playful Time
 
-**Version:** 1.1.0  
+**Version:** 1.1.3  
 **Author:** Zazalng  
 **For:** Pudel API 2.2.0+
 
@@ -57,14 +57,14 @@ You can share your containers with friends by exporting them from the Control Pa
   "bonk": [
     {
       "id": "uuid-here",
-      "url": "[https://example.com/bonk1.gif](https://example.com/bonk1.gif)",
+      "url": "https://example.com/bonk1.gif",
       "placeholder": "%m bonked %t!"
     }
   ],
   "slap": [
     {
       "id": "uuid-here",
-      "url": "[https://example.com/slap.gif](https://example.com/slap.gif)",
+      "url": "https://example.com/slap.gif",
       "placeholder": "%m slapped %t with a large trout!"
     }
   ]
