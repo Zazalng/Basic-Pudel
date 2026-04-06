@@ -69,16 +69,16 @@ import java.util.concurrent.TimeUnit;
  */
 @Plugin(
         name = "Pudel's Playful Time",
-        version = "1.1.3",
+        version = "1.1.4",
         author = "Zazalng",
         description = "Harmless prank image/gif collections with custom messages"
 )
 public class PudelPlayfulTime {
 
-    // ==================== CONSTANTS ====================
-    private static final String BTN = "prank:";
-    private static final String MODAL = "prank:modal:";
-    private static final String MENU = "prank:menu:";
+    // ==================== HANDLER IDS (compile-time, used in annotations) ====================
+    private static final String BTN_HANDLER = "prank:";
+    private static final String MODAL_HANDLER = "prank:modal:";
+    private static final String MENU_HANDLER = "prank:menu:";
 
     private static final Color ACCENT_MAIN = new Color(0xFF6B6B);
     private static final Color ACCENT_VIEW = new Color(0x4ECDC4);
@@ -94,6 +94,11 @@ public class PudelPlayfulTime {
     private final Map<String, Message> controlMessages = new ConcurrentHashMap<>();
     private final Random random = new Random();
 
+    // Runtime prefixed IDs (initialized in onEnable)
+    private String btnPrefix;
+    private String modalPrefix;
+    private String menuPrefix;
+
     private PrankPanelBuilder panelBuilder;
     private PrankFireHelper fireHelper;
     private PrankExportImportHelper exportImportHelper;
@@ -104,11 +109,15 @@ public class PudelPlayfulTime {
     public void onEnable(PluginContext ctx) {
         this.ctx = ctx;
         PluginDatabaseManager db = ctx.getDatabaseManager();
+        String prefix = db.getPrefix();
+        this.btnPrefix = prefix + BTN_HANDLER;
+        this.modalPrefix = prefix + MODAL_HANDLER;
+        this.menuPrefix = prefix + MENU_HANDLER;
         initializeDatabase(db);
 
-        this.panelBuilder = new PrankPanelBuilder(containerRepo, collectionRepo, BTN, MENU, ACCENT_MAIN, ACCENT_VIEW);
-        this.fireHelper = new PrankFireHelper(containerRepo, collectionRepo, controlMessages, viewingContainer, random, MODAL, ACCENT_PRANK, panelBuilder);
-        this.exportImportHelper = new PrankExportImportHelper(ctx, new ObjectMapper(), containerRepo, collectionRepo, controlMessages, MODAL, ACCENT_IO, panelBuilder);
+        this.panelBuilder = new PrankPanelBuilder(containerRepo, collectionRepo, btnPrefix, menuPrefix, ACCENT_MAIN, ACCENT_VIEW);
+        this.fireHelper = new PrankFireHelper(containerRepo, collectionRepo, controlMessages, viewingContainer, random, modalPrefix, ACCENT_PRANK, panelBuilder);
+        this.exportImportHelper = new PrankExportImportHelper(ctx, new ObjectMapper(), containerRepo, collectionRepo, controlMessages, modalPrefix, ACCENT_IO, panelBuilder);
 
         ctx.log("info", "Pudel's Playful Time has initialized — let the pranks begin!");
     }
@@ -175,10 +184,10 @@ public class PudelPlayfulTime {
 
     // ==================== BUTTON HANDLER ====================
 
-    @ButtonHandler(BTN)
+    @ButtonHandler(BTN_HANDLER)
     public void handleButton(ButtonInteractionEvent event) {
         String userId = event.getUser().getId();
-        String buttonId = event.getComponentId().substring(BTN.length());
+        String buttonId = event.getComponentId().substring(btnPrefix.length());
 
         switch (buttonId) {
             // Main panel
@@ -211,10 +220,10 @@ public class PudelPlayfulTime {
 
     // ==================== MODAL HANDLER ====================
 
-    @ModalHandler(MODAL)
+    @ModalHandler(MODAL_HANDLER)
     public void handleModal(ModalInteractionEvent event) {
         String userId = event.getUser().getId();
-        String modalId = event.getModalId().substring(MODAL.length());
+        String modalId = event.getModalId().substring(modalPrefix.length());
 
         try {
             switch (modalId) {
@@ -238,10 +247,10 @@ public class PudelPlayfulTime {
 
     // ==================== SELECT MENU HANDLER ====================
 
-    @SelectMenuHandler(MENU)
+    @SelectMenuHandler(MENU_HANDLER)
     public void handleSelectMenu(StringSelectInteractionEvent event) {
         String userId = event.getUser().getId();
-        String menuId = event.getComponentId().substring(MENU.length());
+        String menuId = event.getComponentId().substring(menuPrefix.length());
         String selected = event.getValues().getFirst();
 
         switch (menuId) {
@@ -261,7 +270,7 @@ public class PudelPlayfulTime {
         TextInput nameInput = TextInput.create("name", TextInputStyle.SHORT)
                 .setPlaceholder("e.g. hit, bonk, slap").setMinLength(1).setMaxLength(32).setRequired(true).build();
 
-        event.replyModal(Modal.create(MODAL + "add-container", "Create New Container")
+        event.replyModal(Modal.create(modalPrefix + "add-container", "Create New Container")
                 .addComponents(Label.of("Container Name (unique)", nameInput)).build()
         ).queue();
     }
@@ -315,9 +324,12 @@ public class PudelPlayfulTime {
                         TextDisplay.of("### ➕ Add Prank"),
                         TextDisplay.of("Choose how to provide the image/GIF:"),
                         Separator.create(true, Separator.Spacing.SMALL),
-                        ActionRow.of(Button.success(BTN + "add-prank-upload", "📤 Upload File"), Button.primary(BTN + "add-prank-url", "🔗 Paste URL")),
+                        ActionRow.of(
+                                Button.success(btnPrefix + "add-prank-upload", "📤 Upload File"),
+                                Button.primary(btnPrefix + "add-prank-url", "🔗 Paste URL")
+                        ),
                         Separator.create(true, Separator.Spacing.SMALL),
-                        ActionRow.of(Button.secondary(BTN + "back-view", "⬅️ Back"))
+                        ActionRow.of(Button.secondary(btnPrefix + "back-view", "⬅️ Back"))
                 ).withAccentColor(ACCENT_VIEW)).build()
         ).queue();
     }
@@ -328,7 +340,7 @@ public class PudelPlayfulTime {
             return;
         }
 
-        event.replyModal(Modal.create(MODAL + "add-prank-upload", "Add Prank — Upload")
+        event.replyModal(Modal.create(modalPrefix + "add-prank-upload", "Add Prank — Upload")
                 .addComponents(
                         Label.of("Image/GIF File", AttachmentUpload.create("upload").setRequiredRange(1, 1).setRequired(true).build()),
                         Label.of("Message Template (%m = you, %t = target)", TextInput.create("placeholder", TextInputStyle.PARAGRAPH)
@@ -343,7 +355,7 @@ public class PudelPlayfulTime {
             return;
         }
 
-        event.replyModal(Modal.create(MODAL + "add-prank-url", "Add Prank — URL")
+        event.replyModal(Modal.create(modalPrefix + "add-prank-url", "Add Prank โ€” URL")
                 .addComponents(
                         Label.of("Image/GIF URL", TextInput.create("url", TextInputStyle.SHORT).setPlaceholder("https://example.com/funny.gif").setRequired(true).build()),
                         Label.of("Message Template (%m = you, %t = target)", TextInput.create("placeholder", TextInputStyle.PARAGRAPH)
@@ -430,7 +442,7 @@ public class PudelPlayfulTime {
             return;
         }
 
-        event.replyModal(Modal.create(MODAL + "edit-prank:" + prankId, "Edit Prank")
+        event.replyModal(Modal.create(modalPrefix + "edit-prank:" + prankId, "Edit Prank")
                 .addComponents(
                         TextDisplay.of(prank.getUrl()),
                         Label.of("Image/GIF URL", TextInput.create("url", TextInputStyle.SHORT).setPlaceholder("Direct image/gif URL").setValue(prank.getUrl()).setRequired(true).build()),

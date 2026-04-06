@@ -1,8 +1,8 @@
 # Basic Pudel - Pudel's Role Color
 
-**Version:** 1.0.1  
+**Version:** 1.0.2  
 **Author:** Zazalng  
-**For:** Pudel API 2.2.0+
+**For:** Pudel API 2.2.2+
 
 Pudel's Role Color is a plugin module for the Pudel Discord Bot that allows users to easily set and manage custom color roles for their profiles. Built using the JDA library, it manages user assignments and role creation dynamically while tracking everything via a database to prevent cluttering the guild with unused roles.
 

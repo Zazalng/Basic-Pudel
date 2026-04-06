@@ -58,20 +58,25 @@ import java.util.regex.Pattern;
  */
 @Plugin(
         name = "Pudel's Embed Builder",
-        version = "3.0.1",
+        version = "3.0.2",
         author = "Zazalng",
         description = "Interactive embed builder with Components v2 live preview"
 )
 public class PudelMessagePlugin {
 
-    // ==================== CONSTANTS ====================
-    private static final String BUTTON_PREFIX = "embed:";
-    private static final String MODAL_PREFIX = "embed:modal:";
-    private static final String MENU_PREFIX = "embed:menu:";
+    // ==================== HANDLER IDS (compile-time, used in annotations) ====================
+    private static final String BUTTON_HANDLER = "embed:";
+    private static final String MODAL_HANDLER = "embed:modal:";
+    private static final String MENU_HANDLER = "embed:menu:";
 
     // ==================== STATE ====================
     private PluginContext context;
     private final Map<Long, EmbedSession> activeSessions = new ConcurrentHashMap<>();
+
+    // Runtime prefixed IDs (initialized in onEnable)
+    private String buttonPrefix;
+    private String modalPrefix;
+    private String menuPrefix;
 
     private EmbedViewBuilder viewBuilder;
     private EmbedModalBuilder modalBuilder;
@@ -81,8 +86,12 @@ public class PudelMessagePlugin {
     @OnEnable
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
-        this.viewBuilder = new EmbedViewBuilder(BUTTON_PREFIX);
-        this.modalBuilder = new EmbedModalBuilder(MODAL_PREFIX, MENU_PREFIX);
+        String prefix = ctx.getDatabaseManager().getPrefix();
+        this.buttonPrefix = prefix + BUTTON_HANDLER;
+        this.modalPrefix = prefix + MODAL_HANDLER;
+        this.menuPrefix = prefix + MENU_HANDLER;
+        this.viewBuilder = new EmbedViewBuilder(buttonPrefix);
+        this.modalBuilder = new EmbedModalBuilder(modalPrefix, menuPrefix);
         ctx.log("info", "%s initialized (v%s — Components v2)".formatted(ctx.getInfo().getName(), ctx.getInfo().getVersion()));
     }
 
@@ -134,7 +143,7 @@ public class PudelMessagePlugin {
 
     // ==================== BUTTON HANDLER ====================
 
-    @ButtonHandler(BUTTON_PREFIX)
+    @ButtonHandler(BUTTON_HANDLER)
     public void handleButton(ButtonInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         EmbedSession session = activeSessions.get(userId);
@@ -144,7 +153,7 @@ public class PudelMessagePlugin {
             return;
         }
 
-        String buttonId = event.getComponentId().substring(BUTTON_PREFIX.length());
+        String buttonId = event.getComponentId().substring(buttonPrefix.length());
 
         switch (buttonId) {
             // Content modals
@@ -177,7 +186,7 @@ public class PudelMessagePlugin {
 
     // ==================== MODAL HANDLER ====================
 
-    @ModalHandler(MODAL_PREFIX)
+    @ModalHandler(MODAL_HANDLER)
     public void handleModal(ModalInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         EmbedSession session = activeSessions.get(userId);
@@ -187,7 +196,7 @@ public class PudelMessagePlugin {
             return;
         }
 
-        String modalId = event.getModalId().substring(MODAL_PREFIX.length());
+        String modalId = event.getModalId().substring(modalPrefix.length());
 
         try {
             switch (modalId) {
@@ -290,7 +299,7 @@ public class PudelMessagePlugin {
 
     // ==================== SELECT MENU HANDLER ====================
 
-    @SelectMenuHandler(MENU_PREFIX)
+    @SelectMenuHandler(MENU_HANDLER)
     public void handleSelectMenu(StringSelectInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         EmbedSession session = activeSessions.get(userId);
@@ -301,7 +310,7 @@ public class PudelMessagePlugin {
             TextInput colorInput = TextInput.create("colorhex", TextInputStyle.SHORT)
                     .setPlaceholder("Hex Color (e.g., FF0000)")
                     .setMinLength(6).setMaxLength(6).setRequired(true).build();
-            event.replyModal(Modal.create(MODAL_PREFIX + "customcolor", "Custom Color")
+            event.replyModal(Modal.create(modalPrefix + "customcolor", "Custom Color")
                     .addComponents(Label.of("Color Input", colorInput)).build()).queue();
             return;
         }

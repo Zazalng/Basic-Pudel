@@ -1,8 +1,8 @@
 # Basic Pudel - Pudel's Embed Builder Messages
 
-**Version:** 3.0.1  
+**Version:** 3.0.2  
 **Author:** Zazalng  
-**For:** Pudel API 2.2.0+
+**For:** Pudel API 2.2.2+
 
 Pudel's Embed Builder is an interactive embed builder plugin designed for the Pudel Discord Bot. It functions as a module within the broader Basic-Pudel project, which serves as a central repository for Basic Command Plugins. Built entirely with Discord's Components v2 system, this plugin provides users with a rich, modern interface to build and preview messages directly within Discord.
 

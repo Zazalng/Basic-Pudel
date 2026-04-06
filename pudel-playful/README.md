@@ -1,8 +1,8 @@
 # Basic Pudel - 🎭 Pudel's Playful Time
 
-**Version:** 1.1.3  
+**Version:** 1.1.4  
 **Author:** Zazalng  
-**For:** Pudel API 2.2.0+
+**For:** Pudel API 2.2.2+
 
 A fun, interactive plugin for the Pudel Discord Bot that allows users to create their own collections of "pranks" (harmless image/GIF reactions) with custom placeholder messages. 
 

@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  */
 @Plugin(
         name = "Pudel's Role Color",
-        version = "1.0.1",
+        version = "1.0.2",
         author = "Zazalng",
         description = "Custom color roles for users"
 )

@@ -1,4 +1,4 @@
-# Basic Pudel - 📂 Pudel's Category Management
+# Advanced Pudel - 📂 Pudel's Category Management
 
 **Version:** 1.0.0  
 **Author:** Zazalng  

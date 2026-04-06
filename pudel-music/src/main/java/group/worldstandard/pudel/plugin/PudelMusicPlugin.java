@@ -78,16 +78,16 @@ import java.util.concurrent.TimeUnit;
  */
 @Plugin(
         name = "Pudel's Music",
-        version = "3.1.0",
+        version = "3.1.1",
         author = "Zazalng",
         description = "Unified Music Box with Components v2"
 )
 public class PudelMusicPlugin {
 
-    // ==================== CONSTANTS ====================
-    private static final String BTN = "music:";
-    private static final String MODAL_PREFIX = "music:modal:";
-    private static final String MENU_PREFIX = "music:menu:";
+    // ==================== HANDLER IDS (compile-time, used in annotations) ====================
+    private static final String BTN_HANDLER = "music:";
+    private static final String MODAL_HANDLER = "music:modal:";
+    private static final String MENU_HANDLER = "music:menu:";
 
     private static final Color ACCENT_PLAYING = new Color(0x00D4AA);
     private static final Color ACCENT_IDLE = new Color(0x2B2D31);
@@ -103,6 +103,11 @@ public class PudelMusicPlugin {
     private final Map<Long, MusicSession> activeSessions = new ConcurrentHashMap<>();
     private final Map<String, List<AudioTrack>> searchCache = new ConcurrentHashMap<>();
 
+    // Runtime prefixed IDs (initialized in onEnable)
+    private String btnPrefix;
+    private String modalPrefix;
+    private String menuPrefix;
+
     private MusicViewBuilder viewBuilder;
 
     // ==================== LIFECYCLE ====================
@@ -111,9 +116,13 @@ public class PudelMusicPlugin {
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
         PluginDatabaseManager db = ctx.getDatabaseManager();
+        String prefix = db.getPrefix();
+        this.btnPrefix = prefix + BTN_HANDLER;
+        this.modalPrefix = prefix + MODAL_HANDLER;
+        this.menuPrefix = prefix + MENU_HANDLER;
         initializeDatabase(db);
         initializeLavaPlayer();
-        this.viewBuilder = new MusicViewBuilder(BTN, MENU_PREFIX, queueRepo, historyRepo);
+        this.viewBuilder = new MusicViewBuilder(btnPrefix, menuPrefix, queueRepo, historyRepo);
         ctx.log("info", "%s initialized (v%s — Components v2)".formatted(ctx.getInfo().getName(), ctx.getInfo().getVersion()));
     }
 
@@ -345,7 +354,7 @@ public class PudelMusicPlugin {
 
     // ==================== BUTTON HANDLER ====================
 
-    @ButtonHandler(BTN)
+    @ButtonHandler(BTN_HANDLER)
     public void onButton(ButtonInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         MusicSession session = activeSessions.get(userId);
@@ -360,7 +369,7 @@ public class PudelMusicPlugin {
         if (guild == null) return;
 
         GuildMusicManager mgr = getGuildAudioPlayer(guild);
-        String id = event.getComponentId().substring(BTN.length());
+        String id = event.getComponentId().substring(btnPrefix.length());
 
         // Check if this button interaction is from a temp popup message
         boolean isFromTemp = session.tempMessage != null
@@ -411,12 +420,11 @@ public class PudelMusicPlugin {
             }
             case "loop" -> {
                 mgr.scheduler.cycleLoopMode();
-                String mode = switch (mgr.scheduler.loopMode) {
+                session.lastAction = switch (mgr.scheduler.loopMode) {
                     case 1 -> "🔁 Loop: Queue";
                     case 2 -> "🔂 Loop: Track";
                     default -> "➡ Loop: Off";
                 };
-                session.lastAction = mode;
                 editToMainView(event, mgr, session);
             }
             case "shuffle" -> {
@@ -459,7 +467,7 @@ public class PudelMusicPlugin {
 
     // ==================== MODAL HANDLER ====================
 
-    @ModalHandler(MODAL_PREFIX)
+    @ModalHandler(MODAL_HANDLER)
     public void onModal(ModalInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         MusicSession session = activeSessions.get(userId);
@@ -470,7 +478,7 @@ public class PudelMusicPlugin {
             return;
         }
 
-        String modalId = event.getModalId().substring(MODAL_PREFIX.length());
+        String modalId = event.getModalId().substring(modalPrefix.length());
 
         if ("queuesong".equals(modalId)) {
             String query = getModalValue(event, "query");
@@ -587,7 +595,7 @@ public class PudelMusicPlugin {
 
     // ==================== SELECT MENU HANDLER ====================
 
-    @SelectMenuHandler(MENU_PREFIX)
+    @SelectMenuHandler(MENU_HANDLER)
     public void onSelectMenu(StringSelectInteractionEvent event) {
         long userId = event.getUser().getIdLong();
         MusicSession session = activeSessions.get(userId);
@@ -598,8 +606,8 @@ public class PudelMusicPlugin {
 
         String menuId = event.getComponentId();
 
-        if (menuId.startsWith(MENU_PREFIX + "select:")) {
-            String searchId = menuId.substring((MENU_PREFIX + "select:").length());
+        if (menuId.startsWith(menuPrefix + "select:")) {
+            String searchId = menuId.substring((menuPrefix + "select:").length());
             List<AudioTrack> tracks = searchCache.get(searchId);
 
             if (tracks == null) {
@@ -625,7 +633,7 @@ public class PudelMusicPlugin {
             return;
         }
 
-        if (menuId.equals(MENU_PREFIX + "remove")) {
+        if (menuId.equals(menuPrefix + "remove")) {
             String dbIdStr = event.getValues().getFirst();
             long dbId = Long.parseLong(dbIdStr);
 
@@ -710,7 +718,7 @@ public class PudelMusicPlugin {
                         TextDisplay.of(description),
                         Separator.create(true, Separator.Spacing.SMALL),
                         net.dv8tion.jda.api.components.actionrow.ActionRow.of(
-                                net.dv8tion.jda.api.components.buttons.Button.primary(BTN + "back", "🔙 Back to Player")
+                                net.dv8tion.jda.api.components.buttons.Button.primary(btnPrefix + "back", "🔙 Back to Player")
                         )
                 ).withAccentColor(ACCENT_IDLE));
     }
@@ -726,7 +734,7 @@ public class PudelMusicPlugin {
                 .setDefaultOptions(SelectOption.of("🔍 Auto-detect (URL or YouTube)", "auto"))
                 .build();
 
-        event.replyModal(Modal.create(MODAL_PREFIX + "queuesong", "Queue a Song")
+        event.replyModal(Modal.create(modalPrefix + "queuesong", "Queue a Song")
                 .addComponents(
                         Label.of("URL or Search Query", TextInput.create("query", TextInputStyle.SHORT)
                                 .setPlaceholder("Paste a URL or type a search query...")
