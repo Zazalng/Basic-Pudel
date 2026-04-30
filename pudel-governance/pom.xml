@@ -9,8 +9,8 @@
         <version>2.3.0</version>
     </parent>
 
-    <artifactId>pudel-playful</artifactId>
-    <name>Pudel's Playful Time</name>
+    <name>Pudel's Governor</name>
+    <artifactId>pudel-governance</artifactId>
 
     <licenses>
         <license>
@@ -46,22 +46,9 @@
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jackson.version>3.1.2</jackson.version>
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>tools.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>tools.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>${jackson.version}</version>
-            <scope>provided</scope>
-        </dependency>
     </dependencies>
 
     <build>

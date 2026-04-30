@@ -6,19 +6,20 @@
 
     <groupId>group.worldstandard</groupId>
     <artifactId>default-pudel</artifactId>
-    <version>2.2.2</version>
+    <version>2.3.0</version>
     <packaging>pom</packaging>
     <name>Basic Pudel</name>
     <description>Basic Command for Pudel based on legacy Eli</description>
     <url>https://github.com/World-Standard-Group/Basic-Pudel</url>
 
     <modules>
-        <module>pudel-music</module>
-        <module>pudel-message</module>
-        <module>pudel-rolecolor</module>
-        <module>pudel-playful</module>
-        <module>pudel-componentv2</module>
         <module>pudel-categorizement</module>
+        <module>pudel-componentv2</module>
+        <module>pudel-governance</module>
+        <module>pudel-message</module>
+        <module>pudel-music</module>
+        <module>pudel-playful</module>
+        <module>pudel-rolecolor</module>
     </modules>
 
     <licenses>
@@ -57,10 +58,11 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <jda.version>6.4.1</jda.version>
-        <pudel.version>2.2.2</pudel.version>
+        <pudel.version>2.3.0</pudel.version>
         <log.version>2.0.17</log.version>
         <shade.version>3.6.2</shade.version>
     </properties>
+
     <dependencies>
         <dependency>
             <groupId>net.dv8tion</groupId>

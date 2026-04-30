@@ -294,7 +294,7 @@ public class PudelCategorizing {
 
     /**
      * Handles button interactions for the bot's panel system.
-     * Processes different button clicks and performs corresponding actions based on the button ID.
+     * Processes different button clicks and performs corresponding actsions based on the button ID.
      * Validates user permissions before executing privileged operations.
      * Manages navigation between different panels and handles permission settings.
      *
