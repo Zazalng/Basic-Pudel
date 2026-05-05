@@ -109,7 +109,7 @@ public class PudelPlayfulTime {
     public void onEnable(PluginContext ctx) {
         this.ctx = ctx;
         PluginDatabaseManager db = ctx.getDatabaseManager();
-        String prefix = db.getPrefix();
+        String prefix = db.getSchemaName();
         this.btnPrefix = prefix + BTN_HANDLER;
         this.modalPrefix = prefix + MODAL_HANDLER;
         this.menuPrefix = prefix + MENU_HANDLER;

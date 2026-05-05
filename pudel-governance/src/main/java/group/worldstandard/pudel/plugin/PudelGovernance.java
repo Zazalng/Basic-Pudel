@@ -43,7 +43,7 @@ public class PudelGovernance {
     @OnEnable
     public void onEnable(PluginContext ctx){
         this.context = ctx;
-        String prefix = ctx.getDatabaseManager().getPrefix();
+        String prefix = ctx.getDatabaseManager().getSchemaName();
         this.btnPrefix = prefix + BTN_HANDLER;
         this.modalPrefix = prefix + MODAL_HANDLER;
         this.menuPrefix = prefix + MENU_HANDLER;

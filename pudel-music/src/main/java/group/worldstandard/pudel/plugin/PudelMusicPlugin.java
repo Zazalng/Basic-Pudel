@@ -116,7 +116,7 @@ public class PudelMusicPlugin {
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
         PluginDatabaseManager db = ctx.getDatabaseManager();
-        String prefix = db.getPrefix();
+        String prefix = db.getSchemaName();
         this.btnPrefix = prefix + BTN_HANDLER;
         this.modalPrefix = prefix + MODAL_HANDLER;
         this.menuPrefix = prefix + MENU_HANDLER;
