@@ -18,6 +18,7 @@ public class CaseCollection {
         this.userId = userId;
         this.issuerId = issuerId;
         this.judgeId = judgeId;
+        this.reportId = reportId;
         this.resolveFlag = resolveFlag;
     }
 

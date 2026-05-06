@@ -86,7 +86,7 @@ public class PudelMessagePlugin {
     @OnEnable
     public void onEnable(PluginContext ctx) {
         this.context = ctx;
-        String prefix = ctx.getDatabaseManager().getPrefix();
+        String prefix = ctx.getDatabaseManager().getSchemaName();
         this.buttonPrefix = prefix + BUTTON_HANDLER;
         this.modalPrefix = prefix + MODAL_HANDLER;
         this.menuPrefix = prefix + MENU_HANDLER;
