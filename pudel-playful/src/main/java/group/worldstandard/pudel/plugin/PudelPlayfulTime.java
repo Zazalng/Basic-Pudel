@@ -119,7 +119,9 @@ public class PudelPlayfulTime {
         this.fireHelper = new PrankFireHelper(containerRepo, collectionRepo, controlMessages, viewingContainer, random, modalPrefix, ACCENT_PRANK, panelBuilder);
         this.exportImportHelper = new PrankExportImportHelper(ctx, new ObjectMapper(), containerRepo, collectionRepo, controlMessages, modalPrefix, ACCENT_IO, panelBuilder);
 
-        ctx.log("info", "Pudel's Playful Time has initialized — let the pranks begin!");
+        ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
     }
 
     @OnShutdown
@@ -129,6 +131,9 @@ public class PudelPlayfulTime {
         }
         controlMessages.clear();
         viewingContainer.clear();
+        ctx.log("info", "%s (v%s) graceful shutdown on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
         return true;
     }
 

@@ -92,7 +92,9 @@ public class PudelMessagePlugin {
         this.menuPrefix = prefix + MENU_HANDLER;
         this.viewBuilder = new EmbedViewBuilder(buttonPrefix);
         this.modalBuilder = new EmbedModalBuilder(modalPrefix, menuPrefix);
-        ctx.log("info", "%s initialized (v%s — Components v2)".formatted(ctx.getInfo().getName(), ctx.getInfo().getVersion()));
+        ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
     }
 
     @OnShutdown
@@ -103,6 +105,9 @@ public class PudelMessagePlugin {
             }
         }
         activeSessions.clear();
+        ctx.log("info", "%s (v%s) graceful shutdown on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
         return true;
     }
 

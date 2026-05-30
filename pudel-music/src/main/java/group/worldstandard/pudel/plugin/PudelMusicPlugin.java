@@ -40,6 +40,8 @@ import group.worldstandard.pudel.plugin.entity.QueueEntry;
 import group.worldstandard.pudel.plugin.session.MusicSession;
 import group.worldstandard.pudel.plugin.session.MusicSession.View;
 import group.worldstandard.pudel.plugin.view.MusicViewBuilder;
+import net.dv8tion.jda.api.components.actionrow.ActionRow;
+import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.components.container.Container;
 import net.dv8tion.jda.api.components.label.Label;
 import net.dv8tion.jda.api.components.selections.SelectOption;
@@ -123,13 +125,18 @@ public class PudelMusicPlugin {
         initializeDatabase(db);
         initializeLavaPlayer();
         this.viewBuilder = new MusicViewBuilder(btnPrefix, menuPrefix, queueRepo, historyRepo);
-        ctx.log("info", "%s initialized (v%s — Components v2)".formatted(ctx.getInfo().getName(), ctx.getInfo().getVersion()));
+        ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
     }
 
     @OnShutdown
     public boolean onShutdown(PluginContext ctx) {
         musicManagers.values().forEach(m -> m.player.destroy());
         playerManager.shutdown();
+        ctx.log("info", "%s (v%s) graceful shutdown on '%s'".formatted(
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
         return true;
     }
 
@@ -199,8 +206,8 @@ public class PudelMusicPlugin {
                 com.sedmelluq.discord.lavaplayer.source.youtube.YoutubeAudioSourceManager.class
         );
 
-        /*String oauth2Api = "";
-        ytSourceManager.useOauth2(oauth2Api, !oauth2Api.isEmpty());*/
+        String oauth2Api = "";
+        ytSourceManager.useOauth2(oauth2Api, !oauth2Api.isEmpty());
         this.playerManager.registerSourceManager(ytSourceManager);
     }
 
@@ -542,14 +549,16 @@ public class PudelMusicPlugin {
                 hook.retrieveOriginal().queue(msg -> session.tempMessage = msg);
 
                 playerManager.loadItemOrdered(mgr, finalSearchPrefix + query, new AudioLoadResultHandler() {
-                    @Override public void trackLoaded(AudioTrack track) {
+                    @Override
+                    public void trackLoaded(AudioTrack track) {
                         mgr.scheduler.queue(track, userId);
                         session.lastAction = "🎵 Queued: " + truncate(track.getInfo().title, 40);
                         session.cleanupTemp();
                         updateSessionMessage(session, mgr);
                     }
 
-                    @Override public void playlistLoaded(AudioPlaylist playlist) {
+                    @Override
+                    public void playlistLoaded(AudioPlaylist playlist) {
                         if (playlist.isSearchResult()) {
                             handleSearchResults(session, playlist);
                         } else {
@@ -562,7 +571,8 @@ public class PudelMusicPlugin {
                         }
                     }
 
-                    @Override public void noMatches() {
+                    @Override
+                    public void noMatches() {
                         var hookRef = session.tempHook;
                         session.tempMessage = null;
                         session.tempHook = null;
@@ -580,7 +590,8 @@ public class PudelMusicPlugin {
                         }
                     }
 
-                    @Override public void loadFailed(FriendlyException exception) {
+                    @Override
+                    public void loadFailed(FriendlyException exception) {
                         var hookRef = session.tempHook;
                         session.tempMessage = null;
                         session.tempHook = null;
@@ -726,8 +737,8 @@ public class PudelMusicPlugin {
                         Separator.create(false, Separator.Spacing.SMALL),
                         TextDisplay.of(description),
                         Separator.create(true, Separator.Spacing.SMALL),
-                        net.dv8tion.jda.api.components.actionrow.ActionRow.of(
-                                net.dv8tion.jda.api.components.buttons.Button.primary(btnPrefix + "back", "🔙 Back to Player")
+                        ActionRow.of(
+                                Button.primary(btnPrefix + "back", "🔙 Back to Player")
                         )
                 ).withAccentColor(ACCENT_IDLE));
     }

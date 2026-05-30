@@ -25,8 +25,6 @@ import group.worldstandard.pudel.plugin.entity.CategoryEntry;
 import group.worldstandard.pudel.plugin.entity.PermissionProfile;
 import group.worldstandard.pudel.plugin.entity.PrivilegeRole;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.components.checkbox.Checkbox;
-import net.dv8tion.jda.api.components.checkboxgroup.CheckboxGroup;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.Message;
@@ -43,6 +41,7 @@ import net.dv8tion.jda.api.interactions.InteractionContextType;
 import net.dv8tion.jda.api.components.actionrow.ActionRow;
 import net.dv8tion.jda.api.components.buttons.Button;
 import net.dv8tion.jda.api.components.container.Container;
+import net.dv8tion.jda.api.components.container.ContainerChildComponent;
 import net.dv8tion.jda.api.components.separator.Separator;
 import net.dv8tion.jda.api.components.textdisplay.TextDisplay;
 import net.dv8tion.jda.api.components.textinput.TextInput;
@@ -74,7 +73,7 @@ import java.util.stream.Collectors;
 @Plugin(
         name = "Pudel's Category Management",
         author = "Zazalng",
-        version = "2.0.0-rc1",
+        version = "2.0.0",
         description = "Manages Discord categories and lets administrators assign category managers."
 )
 public class PudelCategorizing {
@@ -159,6 +158,11 @@ public class PudelCategorizing {
     /** Temporary permission state per user: permEnumName -> "ALLOW"/"INHERIT"/"DENY". */
     private final Map<String, LinkedHashMap<String, String>> tempPermState = new ConcurrentHashMap<>();
 
+    /** Create form state per user. */
+    private final Map<String, Map<String, String>> createFormState = new ConcurrentHashMap<>();
+    /** Import form state per user. */
+    private final Map<String, Map<String, String>> importFormState = new ConcurrentHashMap<>();
+
     // ==================== LIFECYCLE ====================
 
     @OnEnable
@@ -170,7 +174,8 @@ public class PudelCategorizing {
         this.menuPrefix = prefix + MENU_HANDLER;
         initializeDatabase(ctx.getDatabaseManager());
         ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
-                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent()));
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
     }
 
     @OnShutdown
@@ -183,8 +188,11 @@ public class PudelCategorizing {
             permCursor.clear();
             editingProfileName.clear();
             tempPermState.clear();
+            createFormState.clear();
+            importFormState.clear();
             ctx.log("info", "%s (v%s) graceful shutdown on '%s'".formatted(
-                    ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent()));
+                    ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+            );
             context = null;
             return true;
         } catch (Exception e) {
@@ -315,15 +323,146 @@ public class PudelCategorizing {
             // ── Main Panel ──
             case "create" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
-                showCreateModal(event, guildId);
+                createFormState.put(userId, new LinkedHashMap<>());
+                createFormState.get(userId).put("controlBy", "false");
+                event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
             }
             case "import" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
-                showImportModal(event, guildId);
+                importFormState.put(userId, new LinkedHashMap<>());
+                importFormState.get(userId).put("acknowledged", "false");
+                event.editMessage(buildImportPanel(guildId, userId).build()).queue();
             }
             case "setting", "back_setting" -> event.editMessage(buildSettingPanel(guild, member).build()).queue();
             case "view", "back_view" -> event.editMessage(buildViewCategoryPanel(guild).build()).queue();
             case "unlink" -> event.editMessage(buildUnlinkPanel(guild, member).build()).queue();
+
+            // ── Create Panel ──
+            case "create_set_name" -> {
+                TextInput nameInput = TextInput.create("name", TextInputStyle.SHORT)
+                        .setPlaceholder("e.g. Staff Area, Private Channels")
+                        .setMinLength(1).setMaxLength(100).setRequired(true).build();
+                event.replyModal(Modal.create(modalPrefix + "create_name", "Set Category Name")
+                        .addComponents(Label.of("Category Name", nameInput)).build()).queue();
+            }
+            case "create_toggle_control" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    boolean current = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
+                    state.put("controlBy", String.valueOf(!current));
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+            case "create_confirm" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state == null) return;
+                String name = state.getOrDefault("name", "").trim();
+                if (name.isEmpty()) {
+                    event.reply("❌ Category name cannot be empty!").setEphemeral(true)
+                            .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+                String managerId = state.get("manager");
+                String roleId = state.get("default_role");
+                String managerProfileName = state.get("manager_profile");
+                String roleProfileName = state.get("role_profile");
+                boolean controlPudel = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
+
+                PermissionProfile managerProfile = findProfile(guildId, managerProfileName);
+                PermissionProfile roleProfile = findProfile(guildId, roleProfileName);
+
+                final String finalName = name;
+                event.deferEdit().queue(hook -> guild.createCategory(finalName).queue(category -> {
+                    applyPermissions(category, guild, managerId, roleId, managerProfile, roleProfile);
+                    if (controlPudel) {
+                        categoryRepo.save(new CategoryEntry(null, guildId, category.getId(), managerId, managerProfileName, roleId, roleProfileName));
+                    }
+                    createFormState.remove(userId);
+                    hook.editOriginal("✅ Category **" + finalName + "** created!" +
+                            (controlPudel ? " (Tracked by Pudel)" : ""))
+                            .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
+                    refreshMainPanel(userId, guild, member);
+                }, err -> hook.editOriginal("❌ Failed to create category: " + err.getMessage())
+                        .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS))));
+            }
+            case "create_cancel" -> {
+                createFormState.remove(userId);
+                event.editMessage(editMainPanel(guild, member).build()).queue();
+            }
+
+            // ── Import Panel ──
+            case "import_toggle_ack" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    boolean current = Boolean.parseBoolean(state.getOrDefault("acknowledged", "false"));
+                    state.put("acknowledged", String.valueOf(!current));
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_confirm" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state == null) return;
+                String categoryId = state.get("category");
+                if (categoryId == null) {
+                    event.reply("❌ Please select a category!").setEphemeral(true)
+                            .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+                if (!categoryRepo.query().where("category_id", categoryId).list().isEmpty()) {
+                    event.reply("❌ This category is already tracked by Pudel!").setEphemeral(true)
+                            .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+                String managerId = state.get("manager");
+                String roleId = state.get("default_role");
+                String managerProfileName = state.get("manager_profile");
+                String roleProfileName = state.get("role_profile");
+                boolean acknowledged = Boolean.parseBoolean(state.getOrDefault("acknowledged", "false"));
+                boolean hasManagerOrRole = (managerId != null) || (roleId != null);
+                if (hasManagerOrRole && !acknowledged) {
+                    event.reply("❌ You must acknowledge the warning when setting a Manager User or Default Role!")
+                            .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+
+                Category category = guild.getCategoryById(categoryId);
+                if (category == null) {
+                    event.reply("❌ Category not found in this server!").setEphemeral(true)
+                            .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
+                    return;
+                }
+
+                PermissionProfile managerProfile = findProfile(guildId, managerProfileName);
+                PermissionProfile roleProfile = findProfile(guildId, roleProfileName);
+                final String catName = category.getName();
+                final String finalCategoryId = categoryId;
+                final String finalManagerId = managerId;
+                final String finalRoleId = roleId;
+                final String finalMgrProfile = managerProfileName;
+                final String finalRoleProfile = roleProfileName;
+
+                event.deferEdit().queue(hook -> {
+                    applyPermissions(category, guild, finalManagerId, finalRoleId, managerProfile, roleProfile);
+                    if (hasManagerOrRole) {
+                        for (GuildChannel ch : category.getChannels()) {
+                            if (ch instanceof ICategorizableChannel catCh) {
+                                catCh.getManager().sync(category).queue(null, _ -> {});
+                            }
+                        }
+                    }
+                    categoryRepo.save(new CategoryEntry(null, guildId, finalCategoryId, finalManagerId, finalMgrProfile, finalRoleId, finalRoleProfile));
+                    importFormState.remove(userId);
+                    hook.editOriginal("✅ Category **" + catName + "** imported and tracked!")
+                            .queue(m ->
+                                        event.editMessage(editMainPanel(guild,member).build()).queueAfter(5, TimeUnit.SECONDS)
+                            );
+                    refreshMainPanel(userId, guild, member);
+                });
+            }
+            case "import_cancel" -> {
+                importFormState.remove(userId);
+                event.editMessage(editMainPanel(guild, member).build()).queue();
+            }
 
             // ── Setting Panel (Permission Profiles) ──
             case "profile_view" -> event.editMessage(buildViewProfileSelectPanel(guildId).build()).queue();
@@ -396,6 +535,8 @@ public class PudelCategorizing {
                 permCursor.remove(userId);
                 editingProfileName.remove(userId);
                 tempPermState.remove(userId);
+                createFormState.remove(userId);
+                importFormState.remove(userId);
                 event.editMessage(editMainPanel(guild, member).build()).queue();
             }
         }
@@ -418,11 +559,24 @@ public class PudelCategorizing {
         if (guild == null || member == null) return;
 
         String modalId = event.getModalId().substring(modalPrefix.length());
+        String userId = event.getUser().getId();
 
         try {
             switch (modalId) {
-                case "create" -> handleCreateModal(event, guild, member);
-                case "import" -> handleImportModal(event, guild, member);
+                case "create_name" -> {
+                    String name = getModalString(event, "name").trim();
+                    if (!name.isEmpty()) {
+                        Map<String, String> state = createFormState.get(userId);
+                        if (state != null) {
+                            state.put("name", name);
+                        }
+                    }
+                    Message msg = controlMessages.get(userId);
+                    if (msg != null) {
+                        msg.editMessage(buildCreatePanel(guild.getId(), userId).build()).queue();
+                    }
+                    event.deferEdit().queue();
+                }
                 case "priv_add" -> handleAddPrivilegeModal(event, guild, member);
                 case "profile_create" -> handleCreateProfileModal(event, guild, member);
             }
@@ -479,95 +633,198 @@ public class PudelCategorizing {
                 }
                 event.editMessage(buildSettingPanel(guild, member).build()).queue();
             }
+
+            // ── Create Panel Select Menus ──
+            case "create_manager" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("manager", selected);
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+            case "create_default_role" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("default_role", selected);
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+            case "create_manager_profile" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("manager_profile", selected);
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+            case "create_role_profile" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("role_profile", selected);
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+
+            // ── Import Panel Select Menus ──
+            case "import_category" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("category", selected);
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_manager" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("manager", selected);
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_default_role" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("default_role", selected);
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_manager_profile" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("manager_profile", selected);
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_role_profile" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("role_profile", selected);
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
         }
     }
 
-    // ==================== MODAL SHOW METHODS ====================
+    // ==================== PANEL BUILDERS (Create / Import) ====================
 
-    private void showCreateModal(ButtonInteractionEvent event, String guildId) {
-        TextInput nameInput = TextInput.create("name", TextInputStyle.SHORT)
-                .setPlaceholder("e.g. Staff Area, Private Channels")
-                .setMinLength(1).setMaxLength(100).setRequired(true).build();
-
-        EntitySelectMenu managerMenu = EntitySelectMenu.create("manager", EntitySelectMenu.SelectTarget.USER)
-                .setRequiredRange(0, 1).setRequired(false).build();
-
-        EntitySelectMenu roleMenu = EntitySelectMenu.create("default_role", EntitySelectMenu.SelectTarget.ROLE)
-                .setRequiredRange(0, 1).setRequired(false).build();
-
+    private MessageEditBuilder buildCreatePanel(String guildId, String userId) {
         List<PermissionProfile> profiles = profileRepo.query().where("guild_id", guildId).list();
-        Modal.Builder modalBuilder = Modal.create(modalPrefix + "create", "Create New Category")
-                .addComponents(
-                        Label.of("Category Name *", nameInput),
-                        Label.of("Manager User (optional)", managerMenu),
-                        Label.of("Default Role (optional)", roleMenu)
-                );
+        Map<String, String> state = createFormState.getOrDefault(userId, new LinkedHashMap<>());
+
+        EntitySelectMenu managerMenu = EntitySelectMenu.create(menuPrefix + "create_manager", EntitySelectMenu.SelectTarget.USER)
+                .setRequiredRange(0, 1).setRequired(false).build();
+
+        EntitySelectMenu roleMenu = EntitySelectMenu.create(menuPrefix + "create_default_role", EntitySelectMenu.SelectTarget.ROLE)
+                .setRequiredRange(0, 1).setRequired(false).build();
+
+        boolean controlBy = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
+        String controlLabel = controlBy ? "✅ Pudel Control: ON" : "❌ Pudel Control: OFF";
+
+        List<ContainerChildComponent> components = new ArrayList<>();
+        components.add(TextDisplay.of("# ➕ Create New Category"));
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Category Name**\n" + (state.containsKey("name") ? "📝 " + state.get("name") : "_Not set_")));
+        components.add(ActionRow.of(Button.primary(btnPrefix + "create_set_name", "📝 Set Category Name")));
+        components.add(Separator.create(false, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Manager User (optional)**"));
+        components.add(ActionRow.of(managerMenu));
+        components.add(Separator.create(false, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Default Role (optional)**"));
+        components.add(ActionRow.of(roleMenu));
 
         if (!profiles.isEmpty()) {
-            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create("manager_profile")
+            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(menuPrefix + "create_manager_profile")
                     .setPlaceholder("Select manager permission profile")
                     .setRequiredRange(0, 1);
-            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create("role_profile")
+            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(menuPrefix + "create_role_profile")
                     .setPlaceholder("Select default role permission profile")
                     .setRequiredRange(0, 1);
             for (PermissionProfile p : profiles) {
                 mgrProfileMenu.addOption(p.getName(), p.getName());
                 roleProfileMenu.addOption(p.getName(), p.getName());
             }
-            modalBuilder.addComponents(
-                    Label.of("Manager Role Profile (optional)", mgrProfileMenu.build()),
-                    Label.of("Default Role Profile (optional)", roleProfileMenu.build())
-            );
+            components.add(Separator.create(false, Separator.Spacing.SMALL));
+            components.add(TextDisplay.of("**Manager Role Profile (optional)**"));
+            components.add(ActionRow.of(mgrProfileMenu.build()));
+            components.add(Separator.create(false, Separator.Spacing.SMALL));
+            components.add(TextDisplay.of("**Default Role Profile (optional)**"));
+            components.add(ActionRow.of(roleProfileMenu.build()));
         }
 
-        modalBuilder.addComponents(Label.of("Control this category via Pudel?", Checkbox.of("controlBy")));
-        event.replyModal(modalBuilder.build()).queue();
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Control this category via Pudel?**\n" + controlLabel));
+        components.add(ActionRow.of(Button.primary(btnPrefix + "create_toggle_control", "⚙️ Toggle Pudel Control")));
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(ActionRow.of(
+                Button.success(btnPrefix + "create_confirm", "✅ Confirm"),
+                Button.danger(btnPrefix + "create_cancel", "❌ Cancel")
+        ));
+
+        return new MessageEditBuilder().useComponentsV2(true).setComponents(
+                Container.of(components).withAccentColor(ACCENT_MAIN)
+        );
     }
 
-    private void showImportModal(ButtonInteractionEvent event, String guildId) {
-        EntitySelectMenu categoryMenu = EntitySelectMenu.create("category", EntitySelectMenu.SelectTarget.CHANNEL)
+    private MessageEditBuilder buildImportPanel(String guildId, String userId) {
+        List<PermissionProfile> profiles = profileRepo.query().where("guild_id", guildId).list();
+        Map<String, String> state = importFormState.getOrDefault(userId, new LinkedHashMap<>());
+
+        EntitySelectMenu categoryMenu = EntitySelectMenu.create(menuPrefix + "import_category", EntitySelectMenu.SelectTarget.CHANNEL)
                 .setChannelTypes(ChannelType.CATEGORY)
                 .setRequiredRange(1, 1).build();
 
-        EntitySelectMenu managerMenu = EntitySelectMenu.create("manager", EntitySelectMenu.SelectTarget.USER)
+        EntitySelectMenu managerMenu = EntitySelectMenu.create(menuPrefix + "import_manager", EntitySelectMenu.SelectTarget.USER)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
-        EntitySelectMenu roleMenu = EntitySelectMenu.create("default_role", EntitySelectMenu.SelectTarget.ROLE)
+        EntitySelectMenu roleMenu = EntitySelectMenu.create(menuPrefix + "import_default_role", EntitySelectMenu.SelectTarget.ROLE)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
-        CheckboxGroup ackGroup = CheckboxGroup.create("acknowledged")
-                .addOption("Selecting Manager/Role will sync all child channel permissions & may make category private", "ack")
-                .setMinValues(1)
-                .setRequired(true)
-                .build();
+        boolean acknowledged = Boolean.parseBoolean(state.getOrDefault("acknowledged", "false"));
+        String ackLabel = acknowledged ? "✅ Acknowledged" : "❌ Not Acknowledged";
+        boolean hasManagerOrRole = (state.get("manager") != null) || (state.get("default_role") != null);
+        boolean confirmEnabled = !hasManagerOrRole || acknowledged;
 
-        Modal.Builder modalBuilder = Modal.create(modalPrefix + "import", "Import Existing Category")
-                .addComponents(
-                        Label.of("Category to Import *", categoryMenu),
-                        Label.of("Manager User (optional)", managerMenu),
-                        Label.of("Default Role (optional)", roleMenu)
-                );
+        List<ContainerChildComponent> components = new ArrayList<>();
+        components.add(TextDisplay.of("# 📥 Import Existing Category"));
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Category to Import ***"));
+        components.add(ActionRow.of(categoryMenu));
+        components.add(Separator.create(false, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Manager User (optional)**"));
+        components.add(ActionRow.of(managerMenu));
+        components.add(Separator.create(false, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Default Role (optional)**"));
+        components.add(ActionRow.of(roleMenu));
 
-        List<PermissionProfile> profiles = profileRepo.query().where("guild_id", guildId).list();
         if (!profiles.isEmpty()) {
-            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create("manager_profile")
+            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(menuPrefix + "import_manager_profile")
                     .setPlaceholder("Select manager permission profile")
                     .setRequiredRange(0, 1);
-            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create("role_profile")
+            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(menuPrefix + "import_role_profile")
                     .setPlaceholder("Select default role permission profile")
                     .setRequiredRange(0, 1);
             for (PermissionProfile p : profiles) {
                 mgrProfileMenu.addOption(p.getName(), p.getName());
                 roleProfileMenu.addOption(p.getName(), p.getName());
             }
-            modalBuilder.addComponents(
-                    Label.of("Manager Role Profile (optional)", mgrProfileMenu.build()),
-                    Label.of("Default Role Profile (optional)", roleProfileMenu.build())
-            );
+            components.add(Separator.create(false, Separator.Spacing.SMALL));
+            components.add(TextDisplay.of("**Manager Role Profile (optional)**"));
+            components.add(ActionRow.of(mgrProfileMenu.build()));
+            components.add(Separator.create(false, Separator.Spacing.SMALL));
+            components.add(TextDisplay.of("**Default Role Profile (optional)**"));
+            components.add(ActionRow.of(roleProfileMenu.build()));
         }
 
-        modalBuilder.addComponents(Label.of("Acknowledgement", ackGroup));
-        event.replyModal(modalBuilder.build()).queue();
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("**Acknowledgement**\nSelecting Manager/Role will sync all child channel permissions & may make category private\n" + ackLabel));
+        components.add(ActionRow.of(Button.primary(btnPrefix + "import_toggle_ack", "✅ Toggle Acknowledge")));
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(ActionRow.of(
+                Button.success(btnPrefix + "import_confirm", "✅ Confirm").withDisabled(!confirmEnabled),
+                Button.danger(btnPrefix + "import_cancel", "❌ Cancel")
+        ));
+
+        return new MessageEditBuilder().useComponentsV2(true).setComponents(
+                Container.of(components).withAccentColor(ACCENT_MAIN)
+        );
     }
 
     private void showAddPrivilegeModal(ButtonInteractionEvent event) {
@@ -590,104 +847,6 @@ public class PudelCategorizing {
     }
 
     // ==================== MODAL HANDLE METHODS ====================
-
-    private void handleCreateModal(ModalInteractionEvent event, Guild guild, Member member) {
-        String name = getModalString(event, "name").trim();
-        String managerId = getModalFirstId(event, "manager");
-        String roleId = getModalFirstId(event, "default_role");
-        String managerProfileName = getModalFirstId(event, "manager_profile");
-        String roleProfileName = getModalFirstId(event, "role_profile");
-        boolean controlPudel = getModalBoolean(event, "controlBy");
-        String guildId = guild.getId();
-
-        if (name.isEmpty()) {
-            event.reply("❌ Category name cannot be empty!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
-        }
-
-        PermissionProfile managerProfile = findProfile(guildId, managerProfileName);
-        PermissionProfile roleProfile = findProfile(guildId, roleProfileName);
-
-        event.deferReply(true).queue(hook -> {
-            guild.createCategory(name).queue(category -> {
-                applyPermissions(category, guild, managerId, roleId, managerProfile, roleProfile);
-
-                if (controlPudel) {
-                    categoryRepo.save(new CategoryEntry(null, guildId, category.getId(), managerId, managerProfileName, roleId, roleProfileName));
-                }
-
-                hook.editOriginal("✅ Category **" + name + "** created!" +
-                                (controlPudel ? " (Tracked by Pudel)" : ""))
-                        .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
-
-                refreshMainPanel(member.getId(), guild, member);
-            }, err -> hook.editOriginal("❌ Failed to create category: " + err.getMessage())
-                    .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS)));
-        });
-    }
-
-    private void handleImportModal(ModalInteractionEvent event, Guild guild, Member member) {
-        String categoryId = getModalFirstId(event, "category");
-        String managerId = getModalFirstId(event, "manager");
-        String roleId = getModalFirstId(event, "default_role");
-        String managerProfileName = getModalFirstId(event, "manager_profile");
-        String roleProfileName = getModalFirstId(event, "role_profile");
-        List<String> ackValues = getModalIdList(event, "acknowledged");
-        boolean acknowledged = ackValues.contains("ack");
-        String guildId = guild.getId();
-
-        if (categoryId == null) {
-            event.reply("❌ Please select a category!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
-        }
-
-        // Check duplicate
-        if (!categoryRepo.query().where("category_id", categoryId).list().isEmpty()) {
-            event.reply("❌ This category is already tracked by Pudel!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
-        }
-
-        // Acknowledgement check when manager or role is set
-        boolean hasManagerOrRole = (managerId != null) || (roleId != null);
-        if (hasManagerOrRole && !acknowledged) {
-            event.reply("❌ You must acknowledge the warning when setting a Manager User or Default Role!")
-                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
-        }
-
-        Category category = guild.getCategoryById(categoryId);
-        if (category == null) {
-            event.reply("❌ Category not found in this server!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
-            return;
-        }
-
-        PermissionProfile managerProfile = findProfile(guildId, managerProfileName);
-        PermissionProfile roleProfile = findProfile(guildId, roleProfileName);
-
-        event.deferReply(true).queue(hook -> {
-            applyPermissions(category, guild, managerId, roleId, managerProfile, roleProfile);
-
-            // Sync child channels to updated category permissions
-            if (hasManagerOrRole) {
-                for (GuildChannel ch : category.getChannels()) {
-                    if (ch instanceof ICategorizableChannel catCh) {
-                        catCh.getManager().sync(category).queue(null, _ -> {});
-                    }
-                }
-            }
-
-            categoryRepo.save(new CategoryEntry(null, guildId, categoryId, managerId, managerProfileName, roleId, roleProfileName));
-
-            hook.editOriginal("✅ Category **" + category.getName() + "** imported and tracked!")
-                    .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
-
-            refreshMainPanel(member.getId(), guild, member);
-        });
-    }
 
     private void handleAddPrivilegeModal(ModalInteractionEvent event, Guild guild, Member member) {
         String roleId = getModalFirstId(event, "role");
@@ -1394,23 +1553,11 @@ public class PudelCategorizing {
         return v != null ? v.getAsString() : "";
     }
 
-    private Boolean getModalBoolean(ModalInteractionEvent event, String id) {
-        var v = event.getValue(id);
-        return v != null && v.getAsBoolean();
-    }
-
-    /** Get the first entity ID from a select menu or checkbox in a modal. */
+    /** Get the first entity ID from a select menu in a modal. */
     private String getModalFirstId(ModalInteractionEvent event, String id) {
         var v = event.getValue(id);
         if (v == null) return null;
         List<String> list = v.getAsStringList();
         return !list.isEmpty() ? list.getFirst() : null;
-    }
-
-    /** Get all selected IDs from a select menu or checkbox group in a modal. */
-    private List<String> getModalIdList(ModalInteractionEvent event, String id) {
-        var v = event.getValue(id);
-        if (v == null) return List.of();
-        return v.getAsStringList();
     }
 }

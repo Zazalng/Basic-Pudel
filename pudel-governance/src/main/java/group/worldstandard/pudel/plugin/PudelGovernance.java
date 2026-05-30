@@ -49,7 +49,8 @@ public class PudelGovernance {
         this.menuPrefix = prefix + MENU_HANDLER;
         initializeDatabase(ctx.getDatabaseManager());
         ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
-                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent()));
+                ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
+        );
     }
 
     @OnShutdown
