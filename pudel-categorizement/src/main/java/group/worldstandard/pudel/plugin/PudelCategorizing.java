@@ -25,16 +25,14 @@ import group.worldstandard.pudel.plugin.entity.CategoryEntry;
 import group.worldstandard.pudel.plugin.entity.PermissionProfile;
 import group.worldstandard.pudel.plugin.entity.PrivilegeRole;
 import net.dv8tion.jda.api.Permission;
-import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.Member;
-import net.dv8tion.jda.api.entities.Message;
-import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.entities.*;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.entities.channel.concrete.Category;
 import net.dv8tion.jda.api.entities.channel.middleman.GuildChannel;
 import net.dv8tion.jda.api.events.interaction.ModalInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
+import net.dv8tion.jda.api.events.interaction.component.EntitySelectInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.interactions.IntegrationType;
 import net.dv8tion.jda.api.interactions.InteractionContextType;
@@ -79,14 +77,16 @@ import java.util.stream.Collectors;
 public class PudelCategorizing {
 
     // ==================== HANDLER IDS (compile-time, used in annotations) ====================
-    private static final String BTN_HANDLER = "button:";
-    private static final String MODAL_HANDLER = "modal:";
-    private static final String MENU_HANDLER = "menu:";
+    private static final String BTN_HANDLER = ":button:";
+    private static final String MODAL_HANDLER = ":modal:";
+    private static final String STRING_MENU_HANDLER = ":string:";
+    private static final String ENTITY_MENU_HANDLER = ":entity:";
 
     // ==================== RUNTIME PREFIXED IDS (initialized in onEnable) ====================
     private String btnPrefix;
     private String modalPrefix;
-    private String menuPrefix;
+    private String stringMenuPrefix;
+    private String entityMenuPrefix;
 
     private static final Color ACCENT_MAIN = new Color(88,101,242);
     private static final Color ACCENT_SETTING = new Color(254,231,92);
@@ -171,7 +171,9 @@ public class PudelCategorizing {
         String prefix = ctx.getDatabaseManager().getSchemaName();
         this.btnPrefix = prefix + BTN_HANDLER;
         this.modalPrefix = prefix + MODAL_HANDLER;
-        this.menuPrefix = prefix + MENU_HANDLER;
+        this.stringMenuPrefix = prefix + STRING_MENU_HANDLER;
+        this.entityMenuPrefix = prefix + ENTITY_MENU_HANDLER;
+
         initializeDatabase(ctx.getDatabaseManager());
         ctx.log("info", "%s (v%s) has initialized on '%s'".formatted(
                 ctx.getInfo().getName(), ctx.getInfo().getVersion(), ctx.getPudel().getUserAgent())
@@ -378,8 +380,7 @@ public class PudelCategorizing {
                         categoryRepo.save(new CategoryEntry(null, guildId, category.getId(), managerId, managerProfileName, roleId, roleProfileName));
                     }
                     createFormState.remove(userId);
-                    hook.editOriginal("✅ Category **" + finalName + "** created!" +
-                            (controlPudel ? " (Tracked by Pudel)" : ""))
+                    hook.editOriginalComponents(TextDisplay.of("✅ Category **" + finalName + "** imported and tracked!" + (controlPudel ? " (Tracked by Pudel)" : "")))
                             .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
                     refreshMainPanel(userId, guild, member);
                 }, err -> hook.editOriginal("❌ Failed to create category: " + err.getMessage())
@@ -452,7 +453,7 @@ public class PudelCategorizing {
                     }
                     categoryRepo.save(new CategoryEntry(null, guildId, finalCategoryId, finalManagerId, finalMgrProfile, finalRoleId, finalRoleProfile));
                     importFormState.remove(userId);
-                    hook.editOriginal("✅ Category **" + catName + "** imported and tracked!")
+                    hook.editOriginalComponents(TextDisplay.of("✅ Category **" + catName + "** imported and tracked!"))
                             .queue(m ->
                                         event.editMessage(editMainPanel(guild,member).build()).queueAfter(5, TimeUnit.SECONDS)
                             );
@@ -597,13 +598,13 @@ public class PudelCategorizing {
      *
      * @param event the StringSelectInteractionEvent containing interaction data
      */
-    @SelectMenuHandler(MENU_HANDLER)
+    @SelectMenuHandler(STRING_MENU_HANDLER)
     public void handleSelectMenu(StringSelectInteractionEvent event) {
         Guild guild = event.getGuild();
         Member member = event.getMember();
         if (guild == null || member == null) return;
 
-        String menuId = event.getComponentId().substring(menuPrefix.length());
+        String menuId = event.getComponentId().substring(stringMenuPrefix.length());
         String selected = event.getValues().getFirst();
         String userId = member.getId();
         String guildId = guild.getId();
@@ -635,20 +636,6 @@ public class PudelCategorizing {
             }
 
             // ── Create Panel Select Menus ──
-            case "create_manager" -> {
-                Map<String, String> state = createFormState.get(userId);
-                if (state != null) {
-                    state.put("manager", selected);
-                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
-                }
-            }
-            case "create_default_role" -> {
-                Map<String, String> state = createFormState.get(userId);
-                if (state != null) {
-                    state.put("default_role", selected);
-                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
-                }
-            }
             case "create_manager_profile" -> {
                 Map<String, String> state = createFormState.get(userId);
                 if (state != null) {
@@ -665,27 +652,6 @@ public class PudelCategorizing {
             }
 
             // ── Import Panel Select Menus ──
-            case "import_category" -> {
-                Map<String, String> state = importFormState.get(userId);
-                if (state != null) {
-                    state.put("category", selected);
-                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
-                }
-            }
-            case "import_manager" -> {
-                Map<String, String> state = importFormState.get(userId);
-                if (state != null) {
-                    state.put("manager", selected);
-                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
-                }
-            }
-            case "import_default_role" -> {
-                Map<String, String> state = importFormState.get(userId);
-                if (state != null) {
-                    state.put("default_role", selected);
-                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
-                }
-            }
             case "import_manager_profile" -> {
                 Map<String, String> state = importFormState.get(userId);
                 if (state != null) {
@@ -703,16 +669,67 @@ public class PudelCategorizing {
         }
     }
 
+    @SelectMenuHandler(ENTITY_MENU_HANDLER)
+    public void handleEntityMenu(EntitySelectInteractionEvent event) {
+        Guild guild = event.getGuild();
+        Member member = event.getMember();
+        if (guild == null || member == null) return;
+
+        String menuId = event.getComponentId().substring(entityMenuPrefix.length());
+        Mentions selected = event.getMentions();
+        String userId = member.getId();
+        String guildId = guild.getId();
+
+        switch (menuId) {
+            case "import_category" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("category", selected.getChannels().getFirst().getId());
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_manager" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("manager", selected.getMembers().getFirst().getId());
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+            case "import_default_role" -> {
+                Map<String, String> state = importFormState.get(userId);
+                if (state != null) {
+                    state.put("default_role", selected.getRoles().getFirst().getId());
+                    event.editMessage(buildImportPanel(guildId, userId).build()).queue();
+                }
+            }
+
+            case "create_manager" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("manager", selected.getMembers().getFirst().getId());
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+            case "create_default_role" -> {
+                Map<String, String> state = createFormState.get(userId);
+                if (state != null) {
+                    state.put("default_role", selected.getRoles().getFirst().getId());
+                    event.editMessage(buildCreatePanel(guildId, userId).build()).queue();
+                }
+            }
+        }
+    }
+
     // ==================== PANEL BUILDERS (Create / Import) ====================
 
     private MessageEditBuilder buildCreatePanel(String guildId, String userId) {
         List<PermissionProfile> profiles = profileRepo.query().where("guild_id", guildId).list();
         Map<String, String> state = createFormState.getOrDefault(userId, new LinkedHashMap<>());
 
-        EntitySelectMenu managerMenu = EntitySelectMenu.create(menuPrefix + "create_manager", EntitySelectMenu.SelectTarget.USER)
+        EntitySelectMenu managerMenu = EntitySelectMenu.create(entityMenuPrefix + "create_manager", EntitySelectMenu.SelectTarget.USER)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
-        EntitySelectMenu roleMenu = EntitySelectMenu.create(menuPrefix + "create_default_role", EntitySelectMenu.SelectTarget.ROLE)
+        EntitySelectMenu roleMenu = EntitySelectMenu.create(entityMenuPrefix + "create_default_role", EntitySelectMenu.SelectTarget.ROLE)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
         boolean controlBy = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
@@ -731,16 +748,31 @@ public class PudelCategorizing {
         components.add(ActionRow.of(roleMenu));
 
         if (!profiles.isEmpty()) {
-            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(menuPrefix + "create_manager_profile")
+            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(stringMenuPrefix + "create_manager_profile")
                     .setPlaceholder("Select manager permission profile")
                     .setRequiredRange(0, 1);
-            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(menuPrefix + "create_role_profile")
+            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(stringMenuPrefix + "create_role_profile")
                     .setPlaceholder("Select default role permission profile")
                     .setRequiredRange(0, 1);
             for (PermissionProfile p : profiles) {
-                mgrProfileMenu.addOption(p.getName(), p.getName());
-                roleProfileMenu.addOption(p.getName(), p.getName());
+                try {
+                    mgrProfileMenu.addOption(p.getName(), p.getName());
+                    if (importFormState.get(userId).containsKey("import_manager_profile")) {
+                        if (p.getName().equals(importFormState.get(userId).get("manager_profile"))) {
+                            mgrProfileMenu.setDefaultOptions(mgrProfileMenu.getOptions().getLast());
+                        }
+                    }
+                    roleProfileMenu.addOption(p.getName(), p.getName());
+                    if (importFormState.get(userId).containsKey("import_role_profile")) {
+                        if (p.getName().equals(importFormState.get(userId).get("role_profile"))) {
+                            roleProfileMenu.setDefaultOptions(roleProfileMenu.getOptions().getLast());
+                        }
+                    }
+                } catch (IllegalArgumentException ex){
+                    context.log("WARN", "Profile's object options had reach limit.");
+                }
             }
+
             components.add(Separator.create(false, Separator.Spacing.SMALL));
             components.add(TextDisplay.of("**Manager Role Profile (optional)**"));
             components.add(ActionRow.of(mgrProfileMenu.build()));
@@ -767,14 +799,14 @@ public class PudelCategorizing {
         List<PermissionProfile> profiles = profileRepo.query().where("guild_id", guildId).list();
         Map<String, String> state = importFormState.getOrDefault(userId, new LinkedHashMap<>());
 
-        EntitySelectMenu categoryMenu = EntitySelectMenu.create(menuPrefix + "import_category", EntitySelectMenu.SelectTarget.CHANNEL)
+        EntitySelectMenu categoryMenu = EntitySelectMenu.create(entityMenuPrefix + "import_category", EntitySelectMenu.SelectTarget.CHANNEL)
                 .setChannelTypes(ChannelType.CATEGORY)
                 .setRequiredRange(1, 1).build();
 
-        EntitySelectMenu managerMenu = EntitySelectMenu.create(menuPrefix + "import_manager", EntitySelectMenu.SelectTarget.USER)
+        EntitySelectMenu managerMenu = EntitySelectMenu.create(entityMenuPrefix + "import_manager", EntitySelectMenu.SelectTarget.USER)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
-        EntitySelectMenu roleMenu = EntitySelectMenu.create(menuPrefix + "import_default_role", EntitySelectMenu.SelectTarget.ROLE)
+        EntitySelectMenu roleMenu = EntitySelectMenu.create(entityMenuPrefix + "import_default_role", EntitySelectMenu.SelectTarget.ROLE)
                 .setRequiredRange(0, 1).setRequired(false).build();
 
         boolean acknowledged = Boolean.parseBoolean(state.getOrDefault("acknowledged", "false"));
@@ -795,16 +827,31 @@ public class PudelCategorizing {
         components.add(ActionRow.of(roleMenu));
 
         if (!profiles.isEmpty()) {
-            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(menuPrefix + "import_manager_profile")
+            StringSelectMenu.Builder mgrProfileMenu = StringSelectMenu.create(stringMenuPrefix + "import_manager_profile")
                     .setPlaceholder("Select manager permission profile")
                     .setRequiredRange(0, 1);
-            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(menuPrefix + "import_role_profile")
+            StringSelectMenu.Builder roleProfileMenu = StringSelectMenu.create(stringMenuPrefix + "import_role_profile")
                     .setPlaceholder("Select default role permission profile")
                     .setRequiredRange(0, 1);
             for (PermissionProfile p : profiles) {
-                mgrProfileMenu.addOption(p.getName(), p.getName());
-                roleProfileMenu.addOption(p.getName(), p.getName());
+                try {
+                    mgrProfileMenu.addOption(p.getName(), p.getName());
+                    if (importFormState.get(userId).containsKey("import_manager_profile")) {
+                        if (p.getName().equals(importFormState.get(userId).get("manager_profile"))) {
+                            mgrProfileMenu.setDefaultOptions(mgrProfileMenu.getOptions().getLast());
+                        }
+                    }
+                    roleProfileMenu.addOption(p.getName(), p.getName());
+                    if (importFormState.get(userId).containsKey("import_role_profile")) {
+                        if (p.getName().equals(importFormState.get(userId).get("role_profile"))) {
+                            roleProfileMenu.setDefaultOptions(roleProfileMenu.getOptions().getLast());
+                        }
+                    }
+                } catch (IllegalArgumentException ex){
+                    context.log("WARN", "Profile's object options had reach limit.");
+                }
             }
+
             components.add(Separator.create(false, Separator.Spacing.SMALL));
             components.add(TextDisplay.of("**Manager Role Profile (optional)**"));
             components.add(ActionRow.of(mgrProfileMenu.build()));
@@ -821,6 +868,8 @@ public class PudelCategorizing {
                 Button.success(btnPrefix + "import_confirm", "✅ Confirm").withDisabled(!confirmEnabled),
                 Button.danger(btnPrefix + "import_cancel", "❌ Cancel")
         ));
+
+        context.log("DEBUG", String.valueOf(importFormState.get(userId)));
 
         return new MessageEditBuilder().useComponentsV2(true).setComponents(
                 Container.of(components).withAccentColor(ACCENT_MAIN)
@@ -1130,7 +1179,7 @@ public class PudelCategorizing {
         String guildId = guild.getId();
         List<PrivilegeRole> roles = privilegeRepo.query().where("guild_id", guildId).list();
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(menuPrefix + "priv_rm")
+        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(stringMenuPrefix + "priv_rm")
                 .setPlaceholder("Select a role to remove");
 
         for (PrivilegeRole pr : roles) {
@@ -1164,7 +1213,7 @@ public class PudelCategorizing {
             );
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(menuPrefix + "profile_view")
+        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(stringMenuPrefix + "profile_view")
                 .setPlaceholder("Select a profile to view/edit");
         for (PermissionProfile p : profiles) {
             menuBuilder.addOption(p.getName(), p.getName());
@@ -1195,7 +1244,7 @@ public class PudelCategorizing {
             );
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(menuPrefix + "profile_rm")
+        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(stringMenuPrefix + "profile_rm")
                 .setPlaceholder("Select a profile to remove");
         for (PermissionProfile p : profiles) {
             menuBuilder.addOption(p.getName(), p.getName());
@@ -1227,7 +1276,7 @@ public class PudelCategorizing {
             );
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(menuPrefix + "view_cat")
+        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(stringMenuPrefix + "view_cat")
                 .setPlaceholder("Select a category to view");
 
         for (CategoryEntry entry : entries) {
@@ -1278,7 +1327,7 @@ public class PudelCategorizing {
             );
         }
 
-        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(menuPrefix + "unlink_cat")
+        StringSelectMenu.Builder menuBuilder = StringSelectMenu.create(stringMenuPrefix + "unlink_cat")
                 .setPlaceholder("Select a category to unlink");
 
         for (CategoryEntry entry : visible) {

@@ -186,17 +186,15 @@ public class PudelMusicPlugin {
                 .setAllowSearch(true)
                 .setAllowDirectPlaylistIds(true)
                 .setAllowDirectVideoIds(true)
-                .setRemoteCipher("https://cipher.kikkia.dev/", "", context.getPudel().getUserAgent());
+                .setRemoteCipher("https://cipher.kikkia.dev/", null, context.getPudel().getUserAgent());
 
         YoutubeAudioSourceManager ytSourceManager = new YoutubeAudioSourceManager(
                 ytk,
-                new MusicWithThumbnail(),
                 new WebWithThumbnail(),
                 new MWebWithThumbnail(),
                 new WebEmbeddedWithThumbnail(),
                 new AndroidMusicWithThumbnail(),
                 new AndroidVrWithThumbnail(),
-                new IosWithThumbnail(),
                 new Tv(),
                 new TvHtml5SimplyWithThumbnail()
         );
@@ -836,7 +834,14 @@ public class PudelMusicPlugin {
         for (QueueEntry entry : errors) { entry.setStatus("QUEUE"); entry.setIsLooped(false); queueRepo.save(entry); }
 
         List<QueueEntry> played = queueRepo.query().where("guild_id", guildId).where("status", "PLAYED").list();
-        for (QueueEntry entry : played) { queueRepo.deleteById(entry.getId()); }
+        for (QueueEntry entry : played) {
+            if(entry.getIsLooped()){
+                entry.setStatus("QUEUE");
+                queueRepo.save(entry);
+            } else {
+                queueRepo.deleteById(entry.getId());
+            }
+        }
     }
 
     // ==================== AUDIO MANAGER ====================
