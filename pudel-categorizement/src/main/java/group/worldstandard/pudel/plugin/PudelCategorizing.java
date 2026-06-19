@@ -71,7 +71,7 @@ import java.util.stream.Collectors;
 @Plugin(
         name = "Pudel's Category Management",
         author = "Zazalng",
-        version = "2.0.0",
+        version = "2.0.1",
         description = "Manages Discord categories and lets administrators assign category managers."
 )
 public class PudelCategorizing {
@@ -523,11 +523,11 @@ public class PudelCategorizing {
 
             // ── Privilege Panel ──
             case "priv_add" -> {
-                if (!member.hasPermission(Permission.MANAGE_CHANNEL)) { replyNoPermission(event); return; }
+                if (!member.hasPermission(Permission.ADMINISTRATOR)) { replyNoPermission(event); return; }
                 showAddPrivilegeModal(event);
             }
             case "priv_remove" -> {
-                if (!member.hasPermission(Permission.MANAGE_CHANNEL)) { replyNoPermission(event); return; }
+                if (!member.hasPermission(Permission.ADMINISTRATOR)) { replyNoPermission(event); return; }
                 event.editMessage(buildPrivilegeRemovePanel(guild).build()).queue();
             }
 
@@ -1005,7 +1005,7 @@ public class PudelCategorizing {
             privilegeRepo.deleteById(roles.getFirst().getId());
         }
 
-        boolean hasAuth = member.hasPermission(Permission.MANAGE_CHANNEL);
+        boolean hasAuth = member.hasPermission(Permission.ADMINISTRATOR);
         event.editMessage(buildPrivilegePanel(guild, hasAuth).build()).queue();
     }
 
