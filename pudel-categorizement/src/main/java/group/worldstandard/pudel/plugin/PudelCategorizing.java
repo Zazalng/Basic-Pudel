@@ -1376,7 +1376,7 @@ public class PudelCategorizing {
 
         StringBuilder unsyncChStr = new StringBuilder();
         for(GuildChannel ch : cat.getChannels()){
-            if(!ch.getPermissionContainer().getPermissionOverrides().equals(cat.getPermissionOverrides())){
+            if(ch instanceof ICategorizableChannel categorizableChannel && !categorizableChannel.isSynced()){
                 unsyncChStr.append("- [%s](%s)\n".formatted(ch.getName(), ch.getJumpUrl()));
             }
         }
