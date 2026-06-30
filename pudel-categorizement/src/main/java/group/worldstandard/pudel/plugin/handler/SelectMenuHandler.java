@@ -1,12 +1,20 @@
 package group.worldstandard.pudel.plugin.handler;
 
 import group.worldstandard.pudel.plugin.builder.PanelBuilder;
+import group.worldstandard.pudel.plugin.entity.CategoryEntry;
 import group.worldstandard.pudel.plugin.service.PermissionService;
 import group.worldstandard.pudel.plugin.session.SessionManager;
+import java.util.LinkedHashMap;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.Message;
+import net.dv8tion.jda.api.entities.channel.concrete.Category;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Handles string select menu interactions with flat dispatch.
@@ -27,15 +35,15 @@ public class SelectMenuHandler {
     }
 
     public void handle(StringSelectInteractionEvent event) {
-        var guild = event.getGuild();
-        var member = event.getMember();
+        Guild guild = event.getGuild();
+        Member member = event.getMember();
         if (guild == null || member == null) return;
 
-        var menuId = event.getComponentId().substring(stringMenuPrefix.length());
-        var selected = event.getValues().getFirst();
-        var userId = member.getId();
-        var guildId = guild.getId();
-        var hasAuth = permissionService.hasPermissionOrPrivilege(member, guildId);
+        String menuId = event.getComponentId().substring(stringMenuPrefix.length());
+        String selected = event.getValues().getFirst();
+        String userId = member.getId();
+        String guildId = guild.getId();
+        boolean hasAuth = permissionService.hasPermissionOrPrivilege(member, guildId);
 
         switch (menuId) {
             case "view_cat" -> event.editMessage(panelBuilder.buildCategoryDetailPanel(guild, selected).build()).queue();
@@ -55,10 +63,12 @@ public class SelectMenuHandler {
     private void handleProfileView(StringSelectInteractionEvent event, String userId,
                                     String guildId, boolean hasAuth) {
         sessionManager.setEditingProfileName(userId, event.getValues().getFirst());
-        sessionManager.setPermCursor(userId, 0);
-        var profileName = event.getValues().getFirst();
-        var state = permissionService.loadProfilePermState(guildId, profileName);
+        sessionManager.setActivePermSection(userId, PanelBuilder.PermSection.MANAGEMENT);
+        String profileName = event.getValues().getFirst();
+        LinkedHashMap<String, String> state = permissionService.loadProfilePermState(guildId, profileName);
         sessionManager.putTempPermState(userId, state);
+        // Store original state for diff comparison
+        sessionManager.putOriginalPermState(userId, new LinkedHashMap<>(state));
         event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
     }
 
@@ -68,30 +78,30 @@ public class SelectMenuHandler {
                                        Guild guild,
                                        Member member,
                                        String categoryId) {
-        var entry = permissionService.findCategoryEntry(categoryId);
+        CategoryEntry entry = permissionService.findCategoryEntry(categoryId);
         if (entry == null) {
             event.reply("❌ Category record not found!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
 
-        var userId = member.getId();
+        String userId = member.getId();
         boolean isManager = entry.getManager_id() != null && entry.getManager_id().equals(userId);
         if (!permissionService.hasPermissionOrPrivilege(member, guild.getId()) && !isManager) {
             event.reply("❌ You don't have permission to perform this action!")
-                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
 
         permissionService.deleteCategoryEntry(entry.getId());
 
-        var cat = guild.getCategoryById(categoryId);
-        var catName = cat != null ? cat.getName() : categoryId;
+        Category cat = guild.getCategoryById(categoryId);
+        String catName = cat != null ? cat.getName() : categoryId;
 
         event.reply("✅ Category **" + catName + "** unlinked from Pudel (category kept in guild).")
-                .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
 
-        var msg = sessionManager.getControlMessage(userId);
+        Message msg = sessionManager.getControlMessage(userId);
         if (msg != null) {
             msg.editMessage(panelBuilder.editMainPanel(guild, member).build()).queue(null, _ -> {});
         }
@@ -116,7 +126,7 @@ public class SelectMenuHandler {
                                       String guildId, String selected) {
         if (!permissionService.hasPermissionOrPrivilege(member, guildId)) {
             event.reply("❌ You do not have permission to remove permission profiles!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
 
@@ -128,7 +138,7 @@ public class SelectMenuHandler {
 
     private void handleCreateManagerProfile(StringSelectInteractionEvent event, String userId,
                                              String guildId, String selected) {
-        var state = sessionManager.getCreateFormState(userId);
+        Map<String, String> state = sessionManager.getCreateFormState(userId);
         if (state != null) {
             state.put("manager_profile", selected);
             event.editMessage(panelBuilder.buildCreatePanel(guildId, userId).build()).queue();
@@ -137,7 +147,7 @@ public class SelectMenuHandler {
 
     private void handleCreateRoleProfile(StringSelectInteractionEvent event, String userId,
                                           String guildId, String selected) {
-        var state = sessionManager.getCreateFormState(userId);
+        Map<String, String> state = sessionManager.getCreateFormState(userId);
         if (state != null) {
             state.put("role_profile", selected);
             event.editMessage(panelBuilder.buildCreatePanel(guildId, userId).build()).queue();
@@ -148,7 +158,7 @@ public class SelectMenuHandler {
 
     private void handleImportManagerProfile(StringSelectInteractionEvent event, String userId,
                                               String guildId, String selected) {
-        var state = sessionManager.getImportFormState(userId);
+        Map<String, String> state = sessionManager.getImportFormState(userId);
         if (state != null) {
             state.put("manager_profile", selected);
             event.editMessage(panelBuilder.buildImportPanel(guildId, userId).build()).queue();
@@ -157,7 +167,7 @@ public class SelectMenuHandler {
 
     private void handleImportRoleProfile(StringSelectInteractionEvent event, String userId,
                                            String guildId, String selected) {
-        var state = sessionManager.getImportFormState(userId);
+        Map<String, String> state = sessionManager.getImportFormState(userId);
         if (state != null) {
             state.put("role_profile", selected);
             event.editMessage(panelBuilder.buildImportPanel(guildId, userId).build()).queue();

@@ -1,7 +1,9 @@
 package group.worldstandard.pudel.plugin.session;
 
+import group.worldstandard.pudel.plugin.builder.PanelBuilder.PermSection;
 import net.dv8tion.jda.api.entities.Message;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,12 +15,14 @@ public class SessionManager {
 
     /** Ephemeral control panel message per user (userId -> Message). */
     private final Map<String, Message> controlMessages = new ConcurrentHashMap<>();
-    /** Permission cursor index per user. */
-    private final Map<String, Integer> permCursor = new ConcurrentHashMap<>();
+    /** Currently active permission section per user. */
+    private final Map<String, PermSection> activePermSection = new ConcurrentHashMap<>();
     /** Currently editing profile name per user. */
     private final Map<String, String> editingProfileName = new ConcurrentHashMap<>();
     /** Temporary permission state per user: permEnumName -> "ALLOW"/"INHERIT"/"DENY". */
-    private final Map<String, java.util.LinkedHashMap<String, String>> tempPermState = new ConcurrentHashMap<>();
+    private final Map<String, LinkedHashMap<String, String>> tempPermState = new ConcurrentHashMap<>();
+    /** Original permission state per user for diff comparison. */
+    private final Map<String, LinkedHashMap<String, String>> originalPermState = new ConcurrentHashMap<>();
     /** Create form state per user. */
     private final Map<String, Map<String, String>> createFormState = new ConcurrentHashMap<>();
     /** Import form state per user. */
@@ -38,18 +42,32 @@ public class SessionManager {
         return controlMessages.remove(userId);
     }
 
-    // ==================== PERMISSION CURSOR ====================
+    // ==================== ACTIVE PERMISSION SECTION ====================
 
-    public int getPermCursor(String userId) {
-        return permCursor.getOrDefault(userId, 0);
+    public PermSection getActivePermSection(String userId) {
+        return activePermSection.getOrDefault(userId, PermSection.MANAGEMENT);
     }
 
-    public void setPermCursor(String userId, int cursor) {
-        permCursor.put(userId, cursor);
+    public void setActivePermSection(String userId, PermSection section) {
+        activePermSection.put(userId, section);
     }
 
-    public void removePermCursor(String userId) {
-        permCursor.remove(userId);
+    public void removeActivePermSection(String userId) {
+        activePermSection.remove(userId);
+    }
+
+    // ==================== ORIGINAL PERMISSION STATE ====================
+
+    public void putOriginalPermState(String userId, LinkedHashMap<String, String> state) {
+        originalPermState.put(userId, state);
+    }
+
+    public LinkedHashMap<String, String> getOriginalPermState(String userId) {
+        return originalPermState.get(userId);
+    }
+
+    public void removeOriginalPermState(String userId) {
+        originalPermState.remove(userId);
     }
 
     // ==================== EDITING PROFILE ====================
@@ -68,11 +86,11 @@ public class SessionManager {
 
     // ==================== TEMP PERMISSION STATE ====================
 
-    public void putTempPermState(String userId, java.util.LinkedHashMap<String, String> state) {
+    public void putTempPermState(String userId, LinkedHashMap<String, String> state) {
         tempPermState.put(userId, state);
     }
 
-    public java.util.LinkedHashMap<String, String> getTempPermState(String userId) {
+    public LinkedHashMap<String, String> getTempPermState(String userId) {
         return tempPermState.get(userId);
     }
 
@@ -115,9 +133,10 @@ public class SessionManager {
      */
     public void clearUserSession(String userId) {
         removeControlMessage(userId);
-        removePermCursor(userId);
+        removeActivePermSection(userId);
         removeEditingProfileName(userId);
         removeTempPermState(userId);
+        removeOriginalPermState(userId);
         removeCreateFormState(userId);
         removeImportFormState(userId);
     }
@@ -130,9 +149,10 @@ public class SessionManager {
             try { msg.delete().queue(null, _ -> {}); } catch (Exception ignored) {}
         });
         controlMessages.clear();
-        permCursor.clear();
+        activePermSection.clear();
         editingProfileName.clear();
         tempPermState.clear();
+        originalPermState.clear();
         createFormState.clear();
         importFormState.clear();
     }

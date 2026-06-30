@@ -60,9 +60,9 @@ public class PanelBuilder {
         int trackedCount = permissionService.getCategoryEntries(guildId).size();
 
         return Container.of(
-                TextDisplay.of("# � Category Management"),
+                TextDisplay.of("# 📂 Category Management"),
                 Separator.create(true, Separator.Spacing.SMALL),
-                TextDisplay.of("� **Guild Categories:** " + guildCatCount +
+                TextDisplay.of("📊 **Guild Categories:** " + guildCatCount +
                         "\n🤖 **Controlled by Pudel:** " + trackedCount),
                 Separator.create(true, Separator.Spacing.SMALL),
                 ActionRow.of(
@@ -100,7 +100,7 @@ public class PanelBuilder {
         List<ContainerChildComponent> components = new ArrayList<>();
         components.add(TextDisplay.of("# ➕ Create New Category"));
         components.add(Separator.create(true, Separator.Spacing.SMALL));
-        components.add(TextDisplay.of("**Category Name**\n" + (state.containsKey("name") ? "� " + state.get("name") : "_Not set_")));
+        components.add(TextDisplay.of("**Category Name**\n" + (state.containsKey("name") ? "📝 " + state.get("name") : "_Not set_")));
         components.add(ActionRow.of(Button.primary(btnPrefix + "create_set_name", "📝 Set Category Name")));
         components.add(Separator.create(false, Separator.Spacing.SMALL));
         components.add(TextDisplay.of("**Manager User (optional)**"));
@@ -226,52 +226,68 @@ public class PanelBuilder {
 
     // ==================== PERMISSION PANEL ====================
 
-    private record PermInfo(Permission perm, String displayName, String section) {}
+    public record PermInfo(Permission perm, String category, String displayName, PermSection section) {}
 
-    private static final List<PermInfo> MANAGEABLE_PERMISSIONS = List.of(
-            new PermInfo(Permission.MANAGE_CHANNEL, "Manage Channel", "Management"),
-            new PermInfo(Permission.MANAGE_PERMISSIONS, "Manage Permission", "Management"),
-            new PermInfo(Permission.MANAGE_WEBHOOKS, "Manage Webhooks", "Management"),
-            new PermInfo(Permission.MANAGE_EVENTS, "Manage Events", "Management"),
-            new PermInfo(Permission.CREATE_SCHEDULED_EVENTS, "Create Events", "Management"),
-            new PermInfo(Permission.CREATE_INSTANT_INVITE, "Create Invite", "Management"),
-            new PermInfo(Permission.USE_APPLICATION_COMMANDS, "Use App Commands", "Management"),
-            new PermInfo(Permission.USE_EMBEDDED_ACTIVITIES, "Use Activities", "Management"),
-            new PermInfo(Permission.USE_EXTERNAL_APPLICATIONS, "Use External Apps", "Management"),
-            new PermInfo(Permission.MESSAGE_SEND, "Send Message & Posts", "Messaging"),
-            new PermInfo(Permission.CREATE_PUBLIC_THREADS, "Create Public Threads", "Messaging"),
-            new PermInfo(Permission.MESSAGE_EXT_EMOJI, "Use External Emojis", "Messaging"),
-            new PermInfo(Permission.MESSAGE_EXT_STICKER, "Use External Stickers", "Messaging"),
-            new PermInfo(Permission.MESSAGE_SEND_IN_THREADS, "Send in Threads & Posts", "Messaging"),
-            new PermInfo(Permission.CREATE_PRIVATE_THREADS, "Create Private Threads", "Messaging"),
-            new PermInfo(Permission.MESSAGE_EMBED_LINKS, "Embed Links", "Messaging"),
-            new PermInfo(Permission.MESSAGE_ATTACH_FILES, "Attach Files", "Messaging"),
-            new PermInfo(Permission.MESSAGE_ADD_REACTION, "Add Reactions", "Messaging"),
-            new PermInfo(Permission.MESSAGE_MENTION_EVERYONE, "Mention Ability `@`", "Messaging"),
-            new PermInfo(Permission.MESSAGE_MANAGE, "Manage Messages", "Messaging"),
-            new PermInfo(Permission.MANAGE_THREADS, "Manage Threads & Posts", "Messaging"),
-            new PermInfo(Permission.MESSAGE_HISTORY, "Read Message History", "Messaging"),
-            new PermInfo(Permission.MESSAGE_TTS, "Send TTS Message", "Messaging"),
-            new PermInfo(Permission.MESSAGE_ATTACH_VOICE_MESSAGE, "Send Voice Message", "Messaging"),
-            new PermInfo(Permission.MESSAGE_SEND_POLLS, "Create Polls", "Messaging"),
-            new PermInfo(Permission.VOICE_CONNECT, "Connect", "Voice"),
-            new PermInfo(Permission.VOICE_SPEAK, "Speak", "Voice"),
-            new PermInfo(Permission.VOICE_STREAM, "Video", "Voice"),
-            new PermInfo(Permission.VOICE_USE_SOUNDBOARD, "Use Soundboard", "Voice"),
-            new PermInfo(Permission.VOICE_USE_EXTERNAL_SOUNDS, "Use External Sounds", "Voice"),
-            new PermInfo(Permission.VOICE_USE_VAD, "Use Voice Activity", "Voice"),
-            new PermInfo(Permission.PRIORITY_SPEAKER, "Priority Speaker", "Voice"),
-            new PermInfo(Permission.VOICE_MUTE_OTHERS, "Mute Members", "Voice"),
-            new PermInfo(Permission.VOICE_DEAF_OTHERS, "Deafen Members", "Voice"),
-            new PermInfo(Permission.VOICE_MOVE_OTHERS, "Move Members", "Voice"),
-            new PermInfo(Permission.VOICE_SET_STATUS, "Set Voice Status", "Voice"),
-            new PermInfo(Permission.REQUEST_TO_SPEAK, "Request to Speak", "Voice")
+    public enum PermSection{
+        MANAGEMENT("Management Ability"),
+        USER("User Ability"),
+        OTHER("Other Ability");
+
+        private final String section;
+
+        PermSection(String section){
+            this.section = section;
+        }
+
+        public String getSection() {
+            return section;
+        }
+    }
+
+    public static final List<PermInfo> MANAGEABLE_PERMISSIONS = List.of(
+            new PermInfo(Permission.MANAGE_CHANNEL, "Channel", "Manage Channel", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MANAGE_PERMISSIONS, "Channel", "Manage Permission", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MANAGE_WEBHOOKS, "Channel", "Manage Webhooks", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MANAGE_EVENTS, "Channel", "Manage Events", PermSection.MANAGEMENT),
+            new PermInfo(Permission.CREATE_SCHEDULED_EVENTS, "Channel", "Create Events", PermSection.MANAGEMENT),
+            new PermInfo(Permission.CREATE_INSTANT_INVITE, "Channel", "Create Invite", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MESSAGE_MENTION_EVERYONE, "Message", "Mention Ability `@`", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MESSAGE_MANAGE, "Message", "Manage Messages", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MANAGE_THREADS, "Message", "Manage Threads & Posts", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MESSAGE_SEND_POLLS, "Message", "Create Polls", PermSection.MANAGEMENT),
+            new PermInfo(Permission.VOICE_MUTE_OTHERS, "Voice", "Mute Members", PermSection.MANAGEMENT),
+            new PermInfo(Permission.VOICE_DEAF_OTHERS, "Voice", "Deafen Members", PermSection.MANAGEMENT),
+            new PermInfo(Permission.VOICE_MOVE_OTHERS, "Voice", "Move Members", PermSection.MANAGEMENT),
+            new PermInfo(Permission.MESSAGE_SEND, "Message", "Send Message & Posts", PermSection.USER),
+            new PermInfo(Permission.CREATE_PUBLIC_THREADS, "Message", "Create Public Threads", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_EXT_EMOJI, "Message", "Use External Emojis", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_EXT_STICKER, "Message", "Use External Stickers", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_SEND_IN_THREADS, "Message", "Send in Threads & Posts", PermSection.USER),
+            new PermInfo(Permission.CREATE_PRIVATE_THREADS, "Message", "Create Private Threads", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_EMBED_LINKS, "Message", "Embed Links", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_ATTACH_FILES, "Message", "Attach Files", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_ADD_REACTION, "Message", "Add Reactions", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_HISTORY, "Message", "Read Message History", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_TTS, "Message", "Send TTS Message", PermSection.USER),
+            new PermInfo(Permission.MESSAGE_ATTACH_VOICE_MESSAGE, "Message", "Send Voice Message", PermSection.USER),
+            new PermInfo(Permission.VOICE_CONNECT, "Voice", "Connect", PermSection.USER),
+            new PermInfo(Permission.VOICE_SPEAK, "Voice", "Speak", PermSection.USER),
+            new PermInfo(Permission.VOICE_STREAM, "Voice", "Video", PermSection.USER),
+            new PermInfo(Permission.VOICE_USE_SOUNDBOARD, "Voice", "Use Soundboard", PermSection.USER),
+            new PermInfo(Permission.VOICE_USE_EXTERNAL_SOUNDS, "Voice", "Use External Sounds", PermSection.USER),
+            new PermInfo(Permission.REQUEST_TO_SPEAK, "Voice", "Request to Speak", PermSection.USER),
+            new PermInfo(Permission.USE_APPLICATION_COMMANDS, "Channel", "Use App Commands", PermSection.OTHER),
+            new PermInfo(Permission.USE_EXTERNAL_APPLICATIONS, "Channel", "Use External Apps", PermSection.OTHER),
+            new PermInfo(Permission.USE_EMBEDDED_ACTIVITIES, "Voice", "Use Activities", PermSection.OTHER),
+            new PermInfo(Permission.VOICE_USE_VAD, "Voice", "Use Voice Activity", PermSection.OTHER),
+            new PermInfo(Permission.PRIORITY_SPEAKER, "Voice", "Priority Speaker", PermSection.OTHER),
+            new PermInfo(Permission.VOICE_SET_STATUS, "Voice", "Set Voice Status", PermSection.OTHER)
     );
 
     public MessageEditBuilder buildPermissionPanel(String userId, boolean hasAuth) {
         String profileName = sessionManager.getEditingProfileName(userId) != null
                 ? sessionManager.getEditingProfileName(userId) : "Unknown";
-        int cursor = sessionManager.getPermCursor(userId);
+        PermSection activeSection = sessionManager.getActivePermSection(userId);
         LinkedHashMap<String, String> state = sessionManager.getTempPermState(userId);
 
         if (state == null) {
@@ -280,49 +296,96 @@ public class PanelBuilder {
                             .withAccentColor(ACCENT_DANGER));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("### 📋 Profile: **").append(profileName).append("**\n\n");
+        List<ContainerChildComponent> components = new ArrayList<>();
+        components.add(TextDisplay.of("# 📋 Profile: **" + profileName + "**"));
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("### " + activeSection.getSection()));
+        components.add(Separator.create(false, Separator.Spacing.SMALL));
 
-        String lastSection = "";
-        int index = 0;
+        // Add permission buttons for active section
         for (PermInfo pi : MANAGEABLE_PERMISSIONS) {
-            if (!pi.section().equals(lastSection)) {
-                if (!lastSection.isEmpty()) sb.append("\n");
-                sb.append("**").append(pi.section()).append("**\n");
-                lastSection = pi.section();
-            }
-
-            String indicator = index == cursor ? "▸ " : "　 ";
+            if (pi.section() != activeSection) continue;
             String permName = pi.perm().name();
             String stateStr = state.getOrDefault(permName, "INHERIT");
-            String stateIcon = switch (stateStr) {
-                case "ALLOW" -> "✅";
-                case "DENY" -> "❌";
-                default -> "⬜";
+            Button btn = switch (stateStr) {
+                case "ALLOW" -> Button.success(btnPrefix + "perm_" + permName, "✅ (%s) %s".formatted(pi.category(),pi.displayName())).withDisabled(!hasAuth);
+                case "DENY" -> Button.danger(btnPrefix + "perm_" + permName, "❌ (%s) %s".formatted(pi.category(),pi.displayName())).withDisabled(!hasAuth);
+                default -> Button.secondary(btnPrefix + "perm_" + permName, "⬜ (%s) %s".formatted(pi.category(),pi.displayName())).withDisabled(!hasAuth);
             };
-
-            sb.append(indicator).append(stateIcon).append(" ").append(pi.displayName())
-                    .append(" — ").append(stateStr).append("\n");
-            index++;
+            components.add(ActionRow.of(btn));
         }
 
-        sb.append("\n-# ↕️ Navigate • Set: ✅ Allow / ⬜ Inherit / ❌ Deny • ✅ Confirm to save");
+        // Tooltip for colors
+        components.add(Separator.create(true, Separator.Spacing.SMALL));
+        components.add(TextDisplay.of("-# 🟢 Green = Allowed · 🔴 Red = Denied · ⬜ Gray = Inherited"));
+
+        // Group navigation buttons
+        components.add(ActionRow.of(
+                Button.primary(btnPrefix + "group_MANAGEMENT", "⚙️ Management Group").withDisabled(activeSection == PermSection.MANAGEMENT),
+                Button.primary(btnPrefix + "group_USER", "👤 User Group").withDisabled(activeSection == PermSection.USER),
+                Button.primary(btnPrefix + "group_OTHER", "🔧 Other Group").withDisabled(activeSection == PermSection.OTHER)
+        ));
+        components.add(ActionRow.of(
+                Button.secondary(btnPrefix + "perm_back", "⬅️ Back"),
+                Button.success(btnPrefix + "confirm", "✅ Confirm").withDisabled(!hasAuth),
+                Button.danger(btnPrefix + "perm_reset", "🔃 Reset").withDisabled(!hasAuth)
+        ));
+
+        return new MessageEditBuilder().useComponentsV2(true).setComponents(
+                Container.of(components).withAccentColor(ACCENT_PERM)
+        );
+    }
+
+    public MessageEditBuilder buildPermissionConfirmPanel(String userId, boolean hasAuth) {
+        String profileName = sessionManager.getEditingProfileName(userId) != null
+                ? sessionManager.getEditingProfileName(userId) : "Unknown";
+        LinkedHashMap<String, String> original = sessionManager.getOriginalPermState(userId);
+        LinkedHashMap<String, String> current = sessionManager.getTempPermState(userId);
+
+        if (original == null || current == null) {
+            return new MessageEditBuilder().useComponentsV2(true).setComponents(
+                    Container.of(TextDisplay.of("❌ Session expired. Use `/categorizement` again."))
+                            .withAccentColor(ACCENT_DANGER));
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 📋 Profile: **").append(profileName).append("**\n\n");
+        sb.append("### Permission Changes\n\n");
+
+        boolean hasChanges = false;
+        for (PermInfo pi : MANAGEABLE_PERMISSIONS) {
+            String permName = pi.perm().name();
+            String origState = original.getOrDefault(permName, "INHERIT");
+            String currState = current.getOrDefault(permName, "INHERIT");
+            if (!origState.equals(currState)) {
+                hasChanges = true;
+                String origIcon = switch (origState) {
+                    case "ALLOW" -> "✅";
+                    case "DENY" -> "❌";
+                    default -> "⬜";
+                };
+                String currIcon = switch (currState) {
+                    case "ALLOW" -> "✅";
+                    case "DENY" -> "❌";
+                    default -> "⬜";
+                };
+                sb.append("• **").append(" (%s) ".formatted(pi.category())).append(pi.displayName().replace("`@", "@")).append("**: ")
+                        .append(origIcon).append(" ").append(origState)
+                        .append(" → ").append(currIcon).append(" ").append(currState).append("\n");
+            }
+        }
+
+        if (!hasChanges) {
+            sb.append("_No changes detected._");
+        }
 
         return new MessageEditBuilder().useComponentsV2(true).setComponents(
                 Container.of(
                         TextDisplay.of(sb.toString()),
                         Separator.create(true, Separator.Spacing.SMALL),
                         ActionRow.of(
-                                Button.primary(btnPrefix + "up", "⬆️ Up"),
-                                Button.primary(btnPrefix + "down", "⬇️ Down"),
-                                Button.success(btnPrefix + "allow", "✅ Allow").withDisabled(!hasAuth),
-                                Button.secondary(btnPrefix + "inherit", "⬜ Inherit").withDisabled(!hasAuth),
-                                Button.danger(btnPrefix + "deny", "❌ Deny").withDisabled(!hasAuth)
-                        ),
-                        ActionRow.of(
-                                Button.secondary(btnPrefix + "perm_back", "⬅️ Back"),
-                                Button.success(btnPrefix + "confirm", "✅ Confirm").withDisabled(!hasAuth),
-                                Button.danger(btnPrefix + "perm_reset", "🔃 Reset").withDisabled(!hasAuth)
+                                Button.success(btnPrefix + "confirm_save", "✅ Confirm").withDisabled(!hasAuth),
+                                Button.secondary(btnPrefix + "confirm_cancel", "❌ Cancel")
                         )
                 ).withAccentColor(ACCENT_PERM)
         );
@@ -441,12 +504,12 @@ public class PanelBuilder {
                 📝 **Text Channels:** %d
                 🔊 **Voice Channels:** %d
                 💬 **Forum Channels:** %d
-                
+
                 👤 **Managed by:** %s
                 📋 **Manager Profile:** %s
                 🎭 **Default Role:** %s
                 📋 **Role Profile:** %s
-                
+
                 ### Unsync Channels
                 %s
                 """.formatted(cat.getName(), textCount, voiceCount, forumCount, managerStr, mgrProfileStr, roleStr, roleProfileStr, unsyncChStr);

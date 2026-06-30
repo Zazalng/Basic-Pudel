@@ -164,6 +164,11 @@ public class PudelCategorizing {
             m.dropIndex("privilege_role", "guild_id");
             m.createIndex("privilege_role", true, "guild_id", "role_id");
         });
+
+        db.migrate(3, m -> {
+            m.dropIndex("category", "category_id");
+            m.createIndex("category", true, "guild_id", "category_id");
+        });
     }
 
     private void createRepositories(PluginDatabaseManager db) {

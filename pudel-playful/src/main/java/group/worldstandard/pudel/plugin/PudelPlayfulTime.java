@@ -164,6 +164,14 @@ public class PudelPlayfulTime {
                     .build();
             db.createTable(collectionSchema);
         });
+
+        db.migrate(2, m -> {
+            m.dropIndex("prank_container","container_id");
+            m.createIndex("prank_container", true, "user_id", "container_id");
+
+            m.dropIndex("prank_collection","prank_id", "container_id");
+            m.createIndex("prank_collection", true, "prank_id", "container_id");
+        });
     }
 
     private void createRepository(PluginDatabaseManager db){

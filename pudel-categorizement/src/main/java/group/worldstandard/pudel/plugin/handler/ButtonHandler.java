@@ -1,6 +1,8 @@
 package group.worldstandard.pudel.plugin.handler;
 
 import group.worldstandard.pudel.plugin.builder.PanelBuilder;
+import group.worldstandard.pudel.plugin.entity.CategoryEntry;
+import group.worldstandard.pudel.plugin.entity.PermissionProfile;
 import group.worldstandard.pudel.plugin.service.PermissionService;
 import group.worldstandard.pudel.plugin.session.SessionManager;
 import net.dv8tion.jda.api.Permission;
@@ -12,8 +14,14 @@ import net.dv8tion.jda.api.components.textinput.TextInputStyle;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.channel.attribute.ICategorizableChannel;
+import net.dv8tion.jda.api.entities.channel.concrete.Category;
+import net.dv8tion.jda.api.entities.channel.middleman.GuildChannel;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.modals.Modal;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Handles button interactions using the strategy pattern.
@@ -38,14 +46,14 @@ public class ButtonHandler {
      * Main entry point — dispatches to sub-handlers based on button ID prefix groups.
      */
     public void handle(ButtonInteractionEvent event) {
-        var guild = event.getGuild();
-        var member = event.getMember();
+        Guild guild = event.getGuild();
+        Member member = event.getMember();
         if (guild == null || member == null) return;
 
-        var userId = event.getUser().getId();
-        var guildId = guild.getId();
-        var buttonId = event.getComponentId().substring(btnPrefix.length());
-        var hasAuth = permissionService.hasPermissionOrPrivilege(member, guildId);
+        String userId = event.getUser().getId();
+        String guildId = guild.getId();
+        String buttonId = event.getComponentId().substring(btnPrefix.length());
+        boolean hasAuth = permissionService.hasPermissionOrPrivilege(member, guildId);
 
         // Route to appropriate sub-handler
         if (isMainPanelButton(buttonId)) {
@@ -85,9 +93,9 @@ public class ButtonHandler {
     }
 
     private boolean isPermissionPanelButton(String id) {
-        return id.equals("up") || id.equals("down") || id.equals("allow")
-                || id.equals("inherit") || id.equals("deny") || id.equals("confirm")
-                || id.equals("perm_reset") || id.equals("perm_back");
+        return id.startsWith("perm_") || id.startsWith("group_")
+                || id.equals("confirm") || id.equals("perm_reset") || id.equals("perm_back")
+                || id.equals("confirm_save") || id.equals("confirm_cancel");
     }
 
     private boolean isPrivilegePanelButton(String id) {
@@ -102,13 +110,13 @@ public class ButtonHandler {
         switch (event.getComponentId().substring(btnPrefix.length())) {
             case "create" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
-                sessionManager.putCreateFormState(userId, new java.util.LinkedHashMap<>());
+                sessionManager.putCreateFormState(userId, new LinkedHashMap<>());
                 sessionManager.getCreateFormState(userId).put("controlBy", "false");
                 event.editMessage(panelBuilder.buildCreatePanel(guildId, userId).build()).queue();
             }
             case "import" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
-                sessionManager.putImportFormState(userId, new java.util.LinkedHashMap<>());
+                sessionManager.putImportFormState(userId, new LinkedHashMap<>());
                 sessionManager.getImportFormState(userId).put("acknowledged", "false");
                 event.editMessage(panelBuilder.buildImportPanel(guildId, userId).build()).queue();
             }
@@ -133,7 +141,7 @@ public class ButtonHandler {
     }
 
     private void handleCreateSetName(ButtonInteractionEvent event) {
-        var nameInput = TextInput.create("name",
+        TextInput nameInput = TextInput.create("name",
                 TextInputStyle.SHORT)
                 .setPlaceholder("e.g. Staff Area, Private Channels")
                 .setMinLength(1).setMaxLength(100).setRequired(true).build();
@@ -144,7 +152,7 @@ public class ButtonHandler {
     }
 
     private void handleCreateToggleControl(ButtonInteractionEvent event, String userId, String guildId) {
-        var state = sessionManager.getCreateFormState(userId);
+        Map<String, String> state = sessionManager.getCreateFormState(userId);
         if (state != null) {
             boolean current = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
             state.put("controlBy", String.valueOf(!current));
@@ -155,25 +163,24 @@ public class ButtonHandler {
     private void handleCreateConfirm(ButtonInteractionEvent event, String userId, String guildId,
                                       Guild guild,
                                       Member member) {
-        var state = sessionManager.getCreateFormState(userId);
+        Map<String, String> state = sessionManager.getCreateFormState(userId);
         if (state == null) return;
-        var name = state.getOrDefault("name", "").trim();
+        String name = state.getOrDefault("name", "").trim();
         if (name.isEmpty()) {
             event.reply("❌ Category name cannot be empty!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
-        var managerId = state.get("manager");
-        var roleId = state.get("default_role");
-        var managerProfileName = state.get("manager_profile");
-        var roleProfileName = state.get("role_profile");
+        String managerId = state.get("manager");
+        String roleId = state.get("default_role");
+        String managerProfileName = state.get("manager_profile");
+        String roleProfileName = state.get("role_profile");
         boolean controlPudel = Boolean.parseBoolean(state.getOrDefault("controlBy", "false"));
 
-        var managerProfile = permissionService.findProfile(guildId, managerProfileName);
-        var roleProfile = permissionService.findProfile(guildId, roleProfileName);
+        PermissionProfile managerProfile = permissionService.findProfile(guildId, managerProfileName);
+        PermissionProfile roleProfile = permissionService.findProfile(guildId, roleProfileName);
 
-        var finalName = name;
-        event.deferEdit().queue(hook -> guild.createCategory(finalName).queue(category -> {
+        event.deferEdit().queue(hook -> guild.createCategory(name).queue(category -> {
             permissionService.applyPermissions(category, guild, managerId, roleId, managerProfile, roleProfile);
             if (controlPudel) {
                 permissionService.saveCategoryEntry(
@@ -183,11 +190,11 @@ public class ButtonHandler {
             sessionManager.removeCreateFormState(userId);
             hook.editOriginalComponents(
                     TextDisplay.of(
-                            "✅ Category **" + finalName + "** imported and tracked!" + (controlPudel ? " (Tracked by Pudel)" : "")))
-                    .queue(m -> m.delete().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                            "✅ Category **" + name + "** imported and tracked!" + (controlPudel ? " (Tracked by Pudel)" : "")))
+                    .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS));
             refreshMainPanel(userId, guild, member);
         }, err -> hook.editOriginal("❌ Failed to create category: " + err.getMessage())
-                .queue(m -> m.delete().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS))));
+                .queue(m -> m.delete().queueAfter(5, TimeUnit.SECONDS))));
     }
 
     private void handleCreateCancel(ButtonInteractionEvent event, String userId,
@@ -222,57 +229,57 @@ public class ButtonHandler {
     private void handleImportConfirm(ButtonInteractionEvent event, String userId, String guildId,
                                       Guild guild,
                                       Member member) {
-        var state = sessionManager.getImportFormState(userId);
+        Map<String, String> state = sessionManager.getImportFormState(userId);
         if (state == null) return;
-        var categoryId = state.get("category");
+        String categoryId = state.get("category");
         if (categoryId == null) {
             event.reply("❌ Please select a category!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
         if (permissionService.isCategoryTracked(categoryId)) {
             event.reply("❌ This category is already tracked by Pudel!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
-        var managerId = state.get("manager");
-        var roleId = state.get("default_role");
-        var managerProfileName = state.get("manager_profile");
-        var roleProfileName = state.get("role_profile");
+        String managerId = state.get("manager");
+        String roleId = state.get("default_role");
+        String managerProfileName = state.get("manager_profile");
+        String roleProfileName = state.get("role_profile");
         boolean acknowledged = Boolean.parseBoolean(state.getOrDefault("acknowledged", "false"));
         boolean hasManagerOrRole = (managerId != null) || (roleId != null);
         if (hasManagerOrRole && !acknowledged) {
             event.reply("❌ You must acknowledge the warning when setting a Manager User or Default Role!")
-                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
 
-        var category = guild.getCategoryById(categoryId);
+        Category category = guild.getCategoryById(categoryId);
         if (category == null) {
             event.reply("❌ Category not found in this server!").setEphemeral(true)
-                    .queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
             return;
         }
 
-        var managerProfile = permissionService.findProfile(guildId, managerProfileName);
-        var roleProfile = permissionService.findProfile(guildId, roleProfileName);
-        var catName = category.getName();
+        PermissionProfile managerProfile = permissionService.findProfile(guildId, managerProfileName);
+        PermissionProfile roleProfile = permissionService.findProfile(guildId, roleProfileName);
+        String catName = category.getName();
 
         event.deferEdit().queue(hook -> {
             permissionService.applyPermissions(category, guild, managerId, roleId, managerProfile, roleProfile);
             if (hasManagerOrRole) {
-                for (var ch : category.getChannels()) {
+                for (GuildChannel ch : category.getChannels()) {
                     if (ch instanceof ICategorizableChannel catCh) {
                         catCh.getManager().sync(category).queue(null, _ -> {});
                     }
                 }
             }
             permissionService.saveCategoryEntry(
-                    new group.worldstandard.pudel.plugin.entity.CategoryEntry(
+                    new CategoryEntry(
                             null, guildId, categoryId, managerId, managerProfileName, roleId, roleProfileName));
             sessionManager.removeImportFormState(userId);
             hook.editOriginalComponents(TextDisplay.of("✅ Category **" + catName + "** imported and tracked!"))
-                    .queue(m -> event.editMessage(panelBuilder.editMainPanel(guild, member).build()).queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                    .queue(m -> event.editMessage(panelBuilder.editMainPanel(guild, member).build()).queueAfter(5, TimeUnit.SECONDS));
             refreshMainPanel(userId, guild, member);
         });
     }
@@ -303,7 +310,7 @@ public class ButtonHandler {
     }
 
     private void handleCreateProfileModal(ButtonInteractionEvent event) {
-        var nameInput = TextInput.create("profile_name",
+        TextInput nameInput = TextInput.create("profile_name",
                 TextInputStyle.SHORT)
                 .setPlaceholder("e.g. Manager Default, Read Only")
                 .setMinLength(1).setMaxLength(50).setRequired(true).build();
@@ -319,52 +326,68 @@ public class ButtonHandler {
                                         Guild guild,
                                         Member member, boolean hasAuth) {
         String buttonId = event.getComponentId().substring(btnPrefix.length());
+
+        // Handle permission state toggle (perm_<PERM_NAME>)
+        if (buttonId.startsWith("perm_")) {
+            if (!hasAuth) { replyNoPermission(event); return; }
+            String permName = buttonId.substring("perm_".length());
+            togglePermState(userId, permName);
+            event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
+            return;
+        }
+
+        // Handle group navigation (group_<SECTION>)
+        if (buttonId.startsWith("group_")) {
+            String sectionName = buttonId.substring("group_".length());
+            try {
+                PanelBuilder.PermSection section = PanelBuilder.PermSection.valueOf(sectionName);
+                sessionManager.setActivePermSection(userId, section);
+                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
+            } catch (IllegalArgumentException ignored) {}
+            return;
+        }
+
         switch (buttonId) {
-            case "up" -> {
-                int cur = sessionManager.getPermCursor(userId);
-                sessionManager.setPermCursor(userId, Math.max(0, cur - 1));
-                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
-            }
-            case "down" -> {
-                int cur = sessionManager.getPermCursor(userId);
-                int maxIdx = panelBuilder.getManageablePermissions().size() - 1;
-                sessionManager.setPermCursor(userId, Math.min(maxIdx, cur + 1));
-                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
-            }
-            case "allow" -> {
-                if (!hasAuth) { replyNoPermission(event); return; }
-                setCurrentPermState(userId, "ALLOW");
-                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
-            }
-            case "inherit" -> {
-                if (!hasAuth) { replyNoPermission(event); return; }
-                setCurrentPermState(userId, "INHERIT");
-                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
-            }
-            case "deny" -> {
-                if (!hasAuth) { replyNoPermission(event); return; }
-                setCurrentPermState(userId, "DENY");
-                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
-            }
             case "confirm" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
-                saveProfilePermState(userId, guildId);
-                event.editMessage(panelBuilder.buildSettingPanel(guild, member).build()).queue();
+                // Show confirmation panel with diff
+                event.editMessage(panelBuilder.buildPermissionConfirmPanel(userId, hasAuth).build()).queue();
             }
             case "perm_reset" -> {
                 if (!hasAuth) { replyNoPermission(event); return; }
+                // Reset only current section
                 String profileName = sessionManager.getEditingProfileName(userId);
                 if (profileName != null) {
-                    java.util.LinkedHashMap<String, String> state = permissionService.loadProfilePermState(guildId, profileName);
-                    sessionManager.putTempPermState(userId, state);
+                    PanelBuilder.PermSection activeSection = sessionManager.getActivePermSection(userId);
+                    LinkedHashMap<String, String> originalState = permissionService.loadProfilePermState(guildId, profileName);
+                    LinkedHashMap<String, String> currentState = sessionManager.getTempPermState(userId);
+                    if (currentState != null) {
+                        // Only reset permissions in current section
+                        for (PanelBuilder.PermInfo pi : panelBuilder.MANAGEABLE_PERMISSIONS) {
+                            if (pi.section() == activeSection) {
+                                String permName = pi.perm().name();
+                                currentState.put(permName, originalState.getOrDefault(permName, "INHERIT"));
+                            }
+                        }
+                    }
                 }
                 event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
             }
             case "perm_back" -> {
-                sessionManager.removePermCursor(userId);
+                sessionManager.removeActivePermSection(userId);
                 sessionManager.removeEditingProfileName(userId);
                 sessionManager.removeTempPermState(userId);
+                sessionManager.removeOriginalPermState(userId);
                 event.editMessage(panelBuilder.buildSettingPanel(guild, member).build()).queue();
+            }
+            case "confirm_save" -> {
+                if (!hasAuth) { replyNoPermission(event); return; }
+                saveProfilePermState(userId, guildId);
+                event.editMessage(panelBuilder.buildSettingPanel(guild, member).build()).queue();
+            }
+            case "confirm_cancel" -> {
+                // Go back to group page
+                event.editMessage(panelBuilder.buildPermissionPanel(userId, hasAuth).build()).queue();
             }
         }
     }
@@ -405,9 +428,10 @@ public class ButtonHandler {
     private void handleBackMain(ButtonInteractionEvent event, String userId,
                                  Guild guild,
                                  Member member) {
-        sessionManager.removePermCursor(userId);
+        sessionManager.removeActivePermSection(userId);
         sessionManager.removeEditingProfileName(userId);
         sessionManager.removeTempPermState(userId);
+        sessionManager.removeOriginalPermState(userId);
         sessionManager.removeCreateFormState(userId);
         sessionManager.removeImportFormState(userId);
         event.editMessage(panelBuilder.editMainPanel(guild, member).build()).queue();
@@ -415,29 +439,33 @@ public class ButtonHandler {
 
     // ==================== HELPERS ====================
 
-    private void setCurrentPermState(String userId, String value) {
-        int cursor = sessionManager.getPermCursor(userId);
-        var state = sessionManager.getTempPermState(userId);
+    private void togglePermState(String userId, String permName) {
+        LinkedHashMap<String, String> state = sessionManager.getTempPermState(userId);
         if (state == null) return;
-        var maxIdx = panelBuilder.getManageablePermissions().size();
-        if (cursor >= maxIdx) return;
-        var permName = panelBuilder.getManageablePermissions().get(cursor).name();
-        state.put(permName, value);
+        String currentState = state.getOrDefault(permName, "INHERIT");
+        // Cycle: INHERIT -> ALLOW -> DENY -> INHERIT
+        String nextState = switch (currentState) {
+            case "INHERIT" -> "ALLOW";
+            case "ALLOW" -> "DENY";
+            default -> "INHERIT";
+        };
+        state.put(permName, nextState);
     }
 
     private void saveProfilePermState(String userId, String guildId) {
-        var state = sessionManager.getTempPermState(userId);
-        var profileName = sessionManager.getEditingProfileName(userId);
+        LinkedHashMap<String, String> state = sessionManager.getTempPermState(userId);
+        String profileName = sessionManager.getEditingProfileName(userId);
         if (state == null || profileName == null) return;
         permissionService.saveProfilePermState(guildId, profileName, state);
-        sessionManager.removePermCursor(userId);
+        sessionManager.removeActivePermSection(userId);
         sessionManager.removeEditingProfileName(userId);
         sessionManager.removeTempPermState(userId);
+        sessionManager.removeOriginalPermState(userId);
     }
 
     private void replyNoPermission(ButtonInteractionEvent event) {
         event.reply("❌ You need **Manage Channels** permission or a Privilege Role to do this!")
-                .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, java.util.concurrent.TimeUnit.SECONDS));
+                .setEphemeral(true).queue(m -> m.deleteOriginal().queueAfter(5, TimeUnit.SECONDS));
     }
 
     private void refreshMainPanel(String userId, Guild guild,
